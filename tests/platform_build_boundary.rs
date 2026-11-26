@@ -111,6 +111,12 @@ fn desktop_native_build_and_play_require_the_compatibility_profiles() {
          [[shaders]]\nsource = \"shaders/scene.slang\"\nentry = \"fragmentMain\"\nstage = \"fragment\"\n"
     );
     let manifest = gamepkg::manifest::Manifest::parse(indexed.as_bytes()).unwrap();
+    let textured = format!(
+        "native_services = true\nnative_graphics = \"textured-v1\"\n{old}\n\
+         [[shaders]]\nsource = \"shaders/textured_v1.slang\"\nentry = \"vertexMain\"\nstage = \"vertex\"\n\
+         [[shaders]]\nsource = \"shaders/textured_v1.slang\"\nentry = \"fragmentMain\"\nstage = \"fragment\"\n"
+    );
+    let textured_manifest = gamepkg::manifest::Manifest::parse(textured.as_bytes()).unwrap();
     let has_runtime = cfg!(all(
         feature = "gui",
         any(
@@ -122,6 +128,14 @@ fn desktop_native_build_and_play_require_the_compatibility_profiles() {
     let has_runtime = has_runtime && gamepkg_takedawn_windows_runner::supports_amd64_tools();
     assert_eq!(gamepkg::native::build_supported(&manifest), has_runtime);
     assert_eq!(gamepkg::native::play_supported(&manifest), has_runtime);
+    assert_eq!(
+        gamepkg::native::build_supported(&textured_manifest),
+        has_runtime
+    );
+    assert_eq!(
+        gamepkg::native::play_supported(&textured_manifest),
+        has_runtime
+    );
     #[cfg(windows)]
     {
         let online = indexed.replace("network = \"none\"", "network = true");

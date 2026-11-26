@@ -37,7 +37,11 @@ download_url="https://example.invalid/game.gamepkg"
   window=found.stdout.splitlines()[0];subprocess.run(['xdotool','windowsize',window,'1400','1000'],env=env,check=True);time.sleep(.5)
   def screen(name):
    path=proof/name;subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(path)],env=env,check=True)
-   return subprocess.check_output(['tesseract',str(path),'stdout','--psm','11'],stderr=subprocess.DEVNULL,text=True)
+   # The signed details use small support text that Tesseract splits at 1x
+   # ("Pr tt website"). Upscaling the same capture keeps the assertion about
+   # signed metadata, not about the launcher's font rasterization.
+   enlarged=proof/(name+'.ocr.png');subprocess.run(['convert',str(path),'-resize','200%',str(enlarged)],env=env,check=True)
+   return subprocess.check_output(['tesseract',str(enlarged),'stdout','--psm','11'],stderr=subprocess.DEVNULL,text=True)
   click_text(window,env,'Catalog Preview',root);time.sleep(.4)
   preview=screen('catalog-description.png');assert 'Try this puzzle before downloading.' in preview,preview
   assert not (home/'com.example.preview.gamepkg').exists()

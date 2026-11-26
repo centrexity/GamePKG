@@ -18,6 +18,7 @@ CLI = Path(os.environ.get("GAMEPKG_TEST_BINARY_DIR", PROJECT / "target/release")
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--indexed", action="store_true")
+    parser.add_argument("--textured", action="store_true")
     args = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix="gamepkg-native-ci-") as directory:
         root = Path(directory)
@@ -34,15 +35,26 @@ def main():
 
         key = root / "test.key"
         run("keygen", "-o", key)
-        game_id = "com.example.native-indexed-ci" if args.indexed else "com.example.native-image-ci"
+        if args.textured:
+            game_id = "com.example.native-textured-ci"
+        elif args.indexed:
+            game_id = "com.example.native-indexed-ci"
+        else:
+            game_id = "com.example.native-image-ci"
         source = root / "source"
-        write_recipe(source, game_id, indexed=args.indexed)
+        write_recipe(source, game_id, indexed=args.indexed, textured=args.textured)
         package = root / "fixture.gamepkg"
         run("pack", source, "-o", package, "--key", key)
         run("install", package, "--trust-creator")
         cache = library / "builds" / hashlib.sha256(package.read_bytes()).hexdigest()
+        if args.textured:
+            # The host-reviewed native profile is Vulkan/WGSL or Vulkan/SPIR-V
+            # only. GLSL/OpenGL stays on the ordinary 2D shader service path.
+            config.write_text('automatic_update_checks=false\nshader_backend="glsl"\n')
+            output = run("build", game_id, good=False)
+            assert "native raster shaders require WGSL/SPIR-V" in output, output
         previous = None
-        for backend in ("wgsl", "spirv") if args.indexed else ("wgsl",):
+        for backend in ("wgsl", "spirv") if args.indexed or args.textured else ("wgsl",):
             config.write_text(f'automatic_update_checks=false\nshader_backend="{backend}"\n')
             if previous is not None:
                 assert "no valid playable entry point" in run("integrity-check", game_id, good=False)
@@ -55,12 +67,19 @@ def main():
             receipt = json.loads(binary.with_suffix(".receipt").read_bytes()[64:])
             assert receipt["bootstrap"] == "InProcess"
             assert receipt["binary"] == hashlib.sha256(contents).hexdigest()
-            assert len(receipt["game"]["shaders"]) == len(receipt["shader_preparation"]) == int(args.indexed)
+            assert len(receipt["game"]["shaders"]) == len(
+                receipt["shader_preparation"]
+            ) == int(args.indexed or args.textured)
             assert "compiled game verified" in run("integrity-check", game_id)
             if previous is not None:
                 assert receipt["shader_preparation"] != previous
             previous = receipt["shader_preparation"]
-            print(f"Verified signed native {'indexed Slang' if args.indexed else 'image'} build ({backend})")
+            profile = (
+                "textured Slang"
+                if args.textured
+                else "indexed Slang" if args.indexed else "image"
+            )
+            print(f"Verified signed native {profile} build ({backend})")
         # Integrity failures remain fatal even when the signed package stays
         # intact. Never run a corrupted executable to exercise this branch.
         with binary.open("ab") as output:

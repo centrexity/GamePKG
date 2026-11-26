@@ -85,6 +85,60 @@ fn render() -> Result<(),i32> {
 }
 "#;
 
+const TEXTURED_V1_SHADER: &[u8] =
+    include_bytes!("../../src/port_host/graphics/textured_v1.slang");
+
+const TEXTURED_GAME: &[u8] = br#"
+fn textured_vertex(x:f32,y:f32,u:f32,v:f32)->[u8;64] {
+  let mut words=[0f32;16];
+  words[0]=x; words[1]=y; words[2]=0.0; words[3]=1.0;
+  words[4]=u; words[5]=v;
+  words[8]=1.0; words[9]=1.0; words[10]=1.0; words[11]=1.0;
+  let mut bytes=[0u8;64];
+  for (n,word) in words.into_iter().enumerate() {
+   bytes[n*4..n*4+4].copy_from_slice(&f32::to_le_bytes(word));
+  }
+  bytes
+ }
+fn render_textured(stateful: bool, present: bool) -> Result<(),i32> {
+  let vertices=[
+   textured_vertex(-0.5,-0.5,0.0,0.0), textured_vertex(0.5,-0.5,0.25,0.0),
+   textured_vertex(0.5,0.5,0.25,0.25), textured_vertex(-0.5,0.5,0.0,0.25)].concat();
+  let vertex=gamepkg::buffer_create(0,&vertices)?;
+  let index=gamepkg::buffer_create(1,&[0,0,0,0,1,0,0,0,2,0,0,0,
+   0,0,0,0,2,0,0,0,3,0,0,0])?;
+  let mut uniform=[0u8;64];
+  for n in 0..4 {
+   uniform[n*4..n*4+4].copy_from_slice(&f32::to_le_bytes(1.0));
+  }
+  let uniform=gamepkg::buffer_create(2,&uniform)?;
+  let texture=gamepkg::texture_create(2,2,1,1,false)?;
+  gamepkg::texture_write(texture,gamepkg::TextureRegion{mip:0,layer:0,x:0,y:0,width:2,height:2},
+   &[255,0,0,255, 0,255,0,255, 255,0,0,255, 0,0,255,255])?;
+  let textures=[gamepkg::TextureBinding{texture,sampler:0}];
+  let target=gamepkg::target_create(64,64)?;
+  let draw=gamepkg::IndexedDraw{pipeline:0,vertex,index,uniform,first_index:0,index_count:6,
+   base_vertex:0,scissor:[0,0,64,64],textures:&textures};
+  if stateful {
+   let state=gamepkg::DrawState{pipeline_variant:0,blend_constant:[0.0;4],stencil_reference:0,
+    samplers:&[]};
+   gamepkg::target_pass_state(target,3,0x000000ff,1.0,&[draw],&[state],None)?;
+  } else {
+   gamepkg::target_pass(target,3,0x000000ff,1.0,&[draw],None)?;
+  }
+  if read_pixel(target,[24,24])? != [255,0,0,255]
+   || read_pixel(target,[40,40])? != [255,0,0,255]
+   || read_pixel(target,[4,4])? != [0,0,0,255] {return Err(-3);}
+  if present {gamepkg::target_present(target)?;}
+  Ok(())
+ }
+fn render() -> Result<(),i32> {
+  verify_launch_settings()?;
+  render_textured(false,false)?;
+  render_textured(true,true)
+}
+"#;
+
 const READBACK: &[u8] = br#"
 fn verify_launch_settings() -> Result<(),i32> {
  let launch=gamepkg::launch_settings()?;
@@ -96,13 +150,13 @@ fn verify_launch_settings() -> Result<(),i32> {
  }
  Ok(())
 }
-fn verify_pixel(target:u64, expected:[u8;4]) -> Result<(),i32> {
- let ticket=gamepkg::surface_readback(target,[32,32,1,1])?;
+fn read_pixel(target:u64, xy:[u32;2]) -> Result<[u8;4],i32> {
+ let ticket=gamepkg::surface_readback(target,[xy[0],xy[1],1,1])?;
  let start=gamepkg::local_performance_sample()?;
  let mut rgba=[0u8;4];
  loop {
   match gamepkg::readback_poll(ticket,&mut rgba) {
-   Ok(4)=>break,
+   Ok(4)=>return Ok(rgba),
    Err(-2)=>{
     let now=gamepkg::local_performance_sample()?;
     if now.counter-start.counter>2*start.frequency{return Err(-2);}
@@ -110,7 +164,9 @@ fn verify_pixel(target:u64, expected:[u8;4]) -> Result<(),i32> {
    _=>return Err(-3)
   }
  }
- if rgba!=expected{return Err(-3);}
+}
+fn verify_pixel(target:u64, expected:[u8;4]) -> Result<(),i32> {
+ if read_pixel(target,[32,32])?!=expected{return Err(-3);}
  Ok(())
 }
 "#;
@@ -119,18 +175,31 @@ fn checked(
     root: &std::path::Path,
     raster: bool,
     templates: Option<&std::path::Path>,
+    textured: bool,
 ) -> anyhow::Result<(CheckedSources, gamepkg::archive::Package)> {
     let mut files = fixture::fixture("examples/minimal");
     let mut manifest = gamepkg::manifest::Manifest::parse(&files["manifest.toml"])?;
     manifest.limits.hard_memory_bytes = 512 * 1024 * 1024;
     manifest.requires_rom = true;
-    manifest.permissions.save = raster;
+    manifest.permissions.save = raster || textured;
+    if textured {
+        manifest.native_services = true;
+        manifest.native_graphics = Some(gamepkg::manifest::NativeGraphics::TexturedV1);
+        manifest.shaders = gamepkg::port_host::graphics::textured_v1_shaders().to_vec();
+        files.insert(
+            "shaders/textured_v1.slang".into(),
+            TEXTURED_V1_SHADER.to_vec(),
+        );
+    }
     files.insert(
         "manifest.toml".into(),
         toml::to_string(&manifest)?.into_bytes(),
     );
     let mut source = SOURCE.to_vec();
-    if let Some(templates) = templates {
+    if textured {
+        source.extend_from_slice(TEXTURED_GAME);
+        source.extend_from_slice(READBACK);
+    } else if let Some(templates) = templates {
         for mask in 0..16 {
             use std::io::Read;
             let name = format!("template_{mask:02}.slang");
@@ -205,15 +274,20 @@ fn main() -> anyhow::Result<()> {
             .ok_or_else(|| {
                 anyhow::anyhow!("select the reviewed service-renderer/shaders directory")
             })?;
-        let (sources, package) = checked(root.path(), true, Some(&path))?;
-        return link_and_run(root.path(), &sources, &package, true);
+        let (sources, package) = checked(root.path(), true, Some(&path), false)?;
+        return link_and_run(root.path(), &sources, &package, true, false);
+    }
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    if std::env::args().any(|arg| arg == "--textured-v1") {
+        let (sources, package) = checked(root.path(), true, None, true)?;
+        return link_and_run(root.path(), &sources, &package, false, true);
     }
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     if std::env::args().any(|arg| arg == "--local") {
-        let (sources, package) = checked(root.path(), true, None)?;
-        return link_and_run(root.path(), &sources, &package, false);
+        let (sources, package) = checked(root.path(), true, None, false)?;
+        return link_and_run(root.path(), &sources, &package, false, false);
     }
-    let (sources, _) = checked(root.path(), false, None)?;
+    let (sources, _) = checked(root.path(), false, None, false)?;
     let target = if cfg!(windows) {
         Target::Windows64
     } else {
@@ -237,6 +311,7 @@ fn link_and_run(
     sources: &CheckedSources,
     package: &gamepkg::archive::Package,
     takedawn: bool,
+    textured: bool,
 ) -> anyhow::Result<()> {
     use anyhow::ensure;
     use eframe::wgpu;
@@ -246,7 +321,9 @@ fn link_and_run(
     };
     use gamepkg::{
         manifest::Shader,
-        port_host::graphics::{takedawn_nvi1_recipes, PipelineRecipe, VerifiedPipelines},
+        port_host::graphics::{
+            takedawn_nvi1_recipes, textured_v1_recipe, PipelineRecipe, VerifiedPipelines,
+        },
     };
     use preparation::Bootstrap;
     let plan = if takedawn {
@@ -306,11 +383,13 @@ fn link_and_run(
     let recipes = || {
         if takedawn {
             takedawn_nvi1_recipes()
+        } else if textured {
+            vec![textured_v1_recipe()]
         } else {
             vec![recipe()]
         }
     };
-    let (different, _) = checked(tempfile::tempdir()?.path(), false, None)?;
+    let (different, _) = checked(tempfile::tempdir()?.path(), false, None, false)?;
     let error = VerifiedPipelines::prepare(root, &different, package, &settings, recipes(), 1)
         .err()
         .expect("other signed source kit must be refused");
@@ -333,6 +412,21 @@ fn link_and_run(
             "unexpected template hash error: {error}"
         );
     }
+    if textured {
+        let mut wrong_pin = vec![textured_v1_recipe()];
+        wrong_pin[0].source_hashes = Some(
+            ["0000000000000000000000000000000000000000000000000000000000000000"; 2],
+        );
+        let error = VerifiedPipelines::prepare(root, sources, package, &settings, wrong_pin, 1)
+            .err()
+            .expect("textured-v1 source must match the reviewed Slang pin");
+        ensure!(
+            error
+                .to_string()
+                .contains("shader source differs from reviewed template"),
+            "unexpected textured-v1 pin error: {error}"
+        );
+    }
     let pipelines = VerifiedPipelines::prepare(root, sources, package, &settings, recipes(), 1)?;
     let build_cache = std::env::var_os("GAMEPKG_FIXTURE_BUILD_CACHE").map(std::path::PathBuf::from);
     let artifact = preparation::build_in_process(
@@ -351,8 +445,10 @@ fn link_and_run(
         "wrong source-kit identity"
     );
     ensure!(
-        receipt.game.objects.len() == 1 && receipt.raw_objects == receipt.game.objects,
-        "missing exact game object provenance"
+        !receipt.game.objects.is_empty() && receipt.raw_objects == receipt.game.objects,
+        "missing exact game object provenance: game={} raw={}",
+        receipt.game.objects.len(),
+        receipt.raw_objects.len()
     );
     let pipeline_count = if takedawn { 16 } else { 1 };
     ensure!(

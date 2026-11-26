@@ -14,26 +14,30 @@ from pathlib import Path
 PROJECT = Path(__file__).resolve().parents[1]
 GAME_ID = "com.gamepkg.windows-native-image"
 INDEXED_ID = "com.gamepkg.windows-native-indexed"
+TEXTURED_ID = "com.gamepkg.windows-native-textured"
 FIXTURES = PROJECT / "tests/fixtures"
 sys.path.insert(0, str(PROJECT / "tools"))
 from package_release import executable_architecture
 
 
-def write_recipe(root, game_id, network=False, indexed=False):
+def write_recipe(root, game_id, network=False, indexed=False, textured=False):
     fixture = PROJECT / "examples/minimal"
     (root / "source/src").mkdir(parents=True)
     for name in ("thumbnail.png", "LICENSE", "NOTICE", "CREDITS.md", "source/Cargo.toml", "source/Cargo.lock"):
         shutil.copyfile(fixture / name, root / name)
-    mode = "indexed" if indexed else "image"
-    shutil.copyfile(FIXTURES / f"windows_native_{mode}.rs", root / "source/src/lib.rs")
+    source_name = "indexed" if indexed else "image"
+    shutil.copyfile(FIXTURES / f"windows_native_{source_name}.rs", root / "source/src/lib.rs")
+    mode = "textured" if textured else source_name
     manifest = (fixture / "manifest.toml").read_text()
     manifest = manifest.replace("com.gamepkg.minimal", game_id)
     manifest = manifest.replace("16777216", "536870912").replace("8388608", "268435456")
-    if not indexed:
+    if not indexed and not textured:
         manifest = manifest.replace("save = false", "save = true")
     if network:
         manifest = manifest.replace('network = "none"', "network = true")
     profile = ""
+    if indexed and textured:
+        raise ValueError("indexed and textured profiles are mutually exclusive")
     if indexed:
         profile = 'native_graphics = "vertex-color-v1"\n'
         (root / "shaders").mkdir()
@@ -49,6 +53,25 @@ source = "shaders/scene.slang"
 entry = "fragmentMain"
 stage = "fragment"
 """
+    if textured:
+        profile = 'native_graphics = "textured-v1"\n'
+        (root / "shaders").mkdir()
+        shutil.copyfile(
+            PROJECT / "src/port_host/graphics/textured_v1.slang",
+            root / "shaders/textured_v1.slang",
+        )
+        manifest += """
+[[shaders]]
+source = "shaders/textured_v1.slang"
+entry = "vertexMain"
+stage = "vertex"
+
+[[shaders]]
+source = "shaders/textured_v1.slang"
+entry = "fragmentMain"
+stage = "fragment"
+"""
+        shutil.copyfile(FIXTURES / "service_textured_v1.rs", root / "source/src/lib.rs")
     (root / "manifest.toml").write_text(
         f'native_services = true\ntitle = "GamePKG native {mode} fixture"\n' + profile + manifest,
         encoding="utf-8",
@@ -113,6 +136,18 @@ def verify_indexed_window(gui, env, proof):
     print("Verified visible Windows native Vulkan indexed Slang window", flush=True)
 
 
+def verify_textured_window(gui, env, proof):
+    from windows_owned_window import OwnedGameWindow
+
+    with OwnedGameWindow(gui, ["--play", TEXTURED_ID, "--target", "native"], env, proof, "textured", child=True) as window:
+        wait_frame(window, "slang-textured", (255, 0, 0))
+        before = window.size()
+        window.resize(*window.alternate_client_size())
+        wait_frame(window, "slang-textured-resized", (255, 0, 0), previous_size=before)
+        window.close()
+    print("Verified visible Windows native Vulkan textured Slang window", flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--visible", action="store_true", help="requires native Windows, hardware Vulkan and an interactive desktop")
@@ -139,13 +174,14 @@ def main():
 
         key = root / "creator.key"
         run("keygen", "-o", key)
-        for game_id, network, indexed in (
-            (INDEXED_ID + "-network", True, True),
-            (GAME_ID, False, False),
-            (INDEXED_ID, False, True),
+        for game_id, network, indexed, textured in (
+            (INDEXED_ID + "-network", True, True, False),
+            (GAME_ID, False, False, False),
+            (INDEXED_ID, False, True, False),
+            (TEXTURED_ID, False, False, True),
         ):
             recipe = root / game_id
-            write_recipe(recipe, game_id, network, indexed)
+            write_recipe(recipe, game_id, network, indexed, textured)
             package = root / f"{game_id}.gamepkg"
             run("pack", recipe, "-o", package, "--key", key)
             run("install", package, "--trust-creator")
@@ -161,11 +197,11 @@ def main():
             assert executable_architecture(binary, True) == arch
             receipt = json.loads(binary.with_suffix(".receipt").read_bytes()[64:])
             assert receipt["bootstrap"] == "InProcess"
-            expected_count = int(indexed)
+            expected_count = int(indexed or textured)
             assert len(receipt["shader_preparation"]) == len(receipt["game"]["shaders"]) == expected_count
             assert receipt["binary"] == hashlib.sha256(binary.read_bytes()).hexdigest()
             assert "compiled game verified" in run("integrity-check", game_id)
-            if indexed:
+            if indexed or textured:
                 # Changing even to another supported backend invalidates the
                 # old receipt. Restore the settings before the window test.
                 alternate = "spirv" if args.shader_backend == "wgsl" else "wgsl"
@@ -174,13 +210,15 @@ def main():
                 assert "no valid playable entry point" in output, output
                 config.write_text(settings + f'shader_backend="{args.shader_backend}"\n')
                 assert "compiled game verified" in run("integrity-check", game_id)
-                print(f"Verified signed offline Windows native indexed Slang build ({args.shader_backend}) and stale shader-cache denial: {arch}", flush=True)
+                profile = "indexed Slang" if indexed else "textured Slang"
+                print(f"Verified signed offline Windows native {profile} build ({args.shader_backend}) and stale shader-cache denial: {arch}", flush=True)
             else:
                 print(f"Verified signed offline Windows native image build and online-package denial: {arch}", flush=True)
 
         if args.visible:
             verify_window(gui, env, home, PROJECT / "target/windows-gui-proof")
             verify_indexed_window(gui, env, PROJECT / "target/windows-gui-proof")
+            verify_textured_window(gui, env, PROJECT / "target/windows-gui-proof")
             run("integrity-check", GAME_ID)
 
 

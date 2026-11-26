@@ -123,6 +123,8 @@ pub fn build_identity() -> String {
         include_str!("graphics/variants.rs"),
         include_str!("graphics/verified.rs"),
         include_str!("graphics/takedawn.rs"),
+        include_str!("graphics/textured.rs"),
+        include_str!("graphics/textured_v1.slang"),
         include_str!("winit_input.rs"),
         include_str!("controllers.rs"),
         include_str!("player.rs"),

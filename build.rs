@@ -3,6 +3,7 @@ use std::{
     env, fs,
     io::{Read, Write},
     path::{Path, PathBuf},
+    process::Command,
 };
 fn generated(output: &Path, bytes: &[u8]) {
     // A stopped build must not leave an empty include file behind while Cargo
@@ -45,14 +46,136 @@ fn embed(variable: &str, name: &str) {
     };
     generated(&output, &bytes);
 }
+fn find_executable(names: &[String]) -> Option<PathBuf> {
+    let path = env::var_os("PATH").unwrap_or_default();
+    for name in names {
+        let candidates = if cfg!(windows) && !name.ends_with(".exe") {
+            vec![PathBuf::from(name), PathBuf::from(format!("{name}.exe"))]
+        } else {
+            vec![PathBuf::from(name)]
+        };
+        for candidate in candidates {
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+            for directory in env::split_paths(&path) {
+                let found = directory.join(&candidate);
+                if found.is_file() {
+                    return Some(found);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn resource_compiler(target: &str, target_env: &str) -> Option<PathBuf> {
+    if let Some(configured) = env::var_os("GAMEPKG_RC") {
+        let path = PathBuf::from(&configured);
+        if path.is_file() {
+            return Some(path);
+        }
+        let name = path.to_string_lossy().into_owned();
+        return find_executable(&[name]);
+    }
+    if target_env == "msvc" {
+        if let Some(found) = find_executable(&["rc.exe".into()]) {
+            return Some(found);
+        }
+        let host_arch = match env::consts::ARCH {
+            "x86_64" => "x64",
+            "x86" => "x86",
+            "aarch64" => "arm64",
+            other => other,
+        };
+        for variable in ["ProgramFiles(x86)", "ProgramFiles", "ProgramW6432"] {
+            let Some(root) = env::var_os(variable) else {
+                continue;
+            };
+            for kit in ["Windows Kits/10/bin", "Windows Kits/8.1/bin"] {
+                let directory = PathBuf::from(&root).join(kit);
+                let Ok(entries) = fs::read_dir(&directory) else {
+                    continue;
+                };
+                let mut versions = entries
+                    .flatten()
+                    .filter(|entry| entry.path().is_dir())
+                    .map(|entry| entry.path())
+                    .collect::<Vec<_>>();
+                versions.sort_by(|left, right| right.cmp(left));
+                for version in versions {
+                    let candidate = version.join(host_arch).join("rc.exe");
+                    if candidate.is_file() {
+                        return Some(candidate);
+                    }
+                }
+            }
+        }
+        None
+    } else {
+        let arch = target.split('-').next().unwrap_or_default();
+        let mut names = Vec::new();
+        if !arch.is_empty() {
+            names.push(format!("{arch}-w64-mingw32-windres"));
+            names.push(format!("{arch}-mingw32-windres"));
+        }
+        names.push("windres".into());
+        find_executable(&names)
+    }
+}
+
+fn embed_windows_icon(target: &str) {
+    if !target.contains("-windows-") {
+        return;
+    }
+    println!("cargo:rerun-if-env-changed=GAMEPKG_RC");
+    let icon = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("Cargo manifest directory"))
+        .join("html/assets/gamepkg.ico");
+    assert!(icon.is_file(), "bundled GamePKG icon must exist");
+    println!("cargo:rerun-if-changed={}", icon.display());
+    let quoted = icon.to_string_lossy().replace('\\', "/");
+    assert!(
+        !quoted.contains(['"', '\n', '\r']),
+        "invalid GamePKG icon resource path"
+    );
+    let output = PathBuf::from(env::var_os("OUT_DIR").expect("Cargo output directory"));
+    let source = output.join("gamepkg-icon.rc");
+    generated(&source, format!("1 ICON \"{quoted}\"\n").as_bytes());
+    let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
+    let compiler = resource_compiler(target, &target_env)
+        .expect("Windows resource compiler; set GAMEPKG_RC to rc.exe or windres");
+    let resource = output.join("gamepkg-icon.res");
+    let status = if target_env == "msvc" {
+        Command::new(&compiler)
+            .arg("-nologo")
+            .arg("/fo")
+            .arg(&resource)
+            .arg(&source)
+            .status()
+    } else {
+        Command::new(&compiler)
+            .arg("-i")
+            .arg(&source)
+            .arg("-o")
+            .arg(&resource)
+            .arg("-O")
+            .arg("coff")
+            .status()
+    };
+    assert!(
+        status.expect("run Windows resource compiler").success(),
+        "compile the GamePKG icon resource"
+    );
+    println!("cargo:rustc-link-arg={}", resource.display());
+}
+
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     // Native games must match this app, even when rustup itself is a different
     // width (for example a 32-bit app on a 64-bit Linux installation).
-    println!(
-        "cargo:rustc-env=GAMEPKG_BUILD_TARGET={}",
-        env::var("TARGET").expect("Cargo target")
-    );
+    let target = env::var("TARGET").expect("Cargo target");
+    println!("cargo:rustc-env=GAMEPKG_BUILD_TARGET={target}");
+    embed_windows_icon(&target);
     embed("GAMEPKG_BUNDLED_AUDIO_DECODER", "audio-decoder.wasm");
     embed("GAMEPKG_BUNDLED_AUDIO_CONVERTER", "audio-converter.wasm");
     println!("cargo:rerun-if-env-changed=GAMEPKG_NATIVE_SDK_SHA256");

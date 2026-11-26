@@ -750,6 +750,21 @@ uniform buffer at group 0 binding 0, u32 triangle indices, one sample,
 depth testing with LessEqual and depth writes enabled. The profile has no
 texture slots. The native worker issues draws using opaque resource IDs.
 
+A service package can instead select the host-reviewed
+`native_graphics = "textured-v1"` profile. Its two `[[shaders]]` entries must
+name `shaders/textured_v1.slang` with `vertexMain` and `fragmentMain`; the host
+pins the exact Slang bytes. Pipeline 0 uses a 64-byte vertex with float4
+position at location 0, float2 UV at location 1, float4 color at location 2 and
+float4 material/TEV parameters at location 3. It has a 64-byte uniform block,
+one filterable RGBA8 2D texture/sampler pair (texture binding 1, sampler
+binding 2), one sample, depth writes with LessEqual, and ordinary state
+variants. The fragment combines the sampled texel with vertex/CLR0 color and
+the uniform/vertex material parameters; textures are supplied by the player's
+disc at runtime. `IndexedDraw.textures` must contain exactly one
+`TextureBinding`. The same profile works through `target_pass` and
+`target_pass_state`. Native service shaders remain WGSL/SPIR-V on Vulkan;
+GLSL/OpenGL remains the separate ordinary 2D shader path.
+
 The indexed Slang path runs on Linux x64 and Windows x86/x64 desktop. Choose
 WGSL or SPIR-V in the shader backend settings and run the ordinary native
 Build. GamePKG compiles the signed stages in its confined Slang worker,

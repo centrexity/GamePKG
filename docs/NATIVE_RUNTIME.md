@@ -32,6 +32,18 @@ loading player settings. `BUILD.json` records that matching identity and the
 packager verifies the copied executable hashes against the validated pair.
 This is a compatibility check, not a creator signature or source provenance proof. The fingerprint includes the admitted Takedawn source-kit revision and the platform builder, so identical app versions cannot hide different builtin engine recipes.
 
+## Windows app icon
+
+The launcher's runtime window icon remains the bundled PNG
+`html/assets/gamepkg-icon.png`. On Windows, `build.rs` turns the matching
+`html/assets/gamepkg.ico` into a Win32 `RT_GROUP_ICON`/`RT_ICON` resource and
+links it into both `gamepkg.exe` and `gamepkg-gui.exe`. It uses `GAMEPKG_RC`
+when set, otherwise Windows SDK `rc.exe` or MinGW `windres`. The release
+packager and `tests/windows_package.py` reject an executable without a valid
+resource, including a group with no 32-pixel-or-larger image. The icon is host
+build evidence only; it is not part of a game package or its signature. Game
+build icons have a separate [qualification plan](GAME_BUILD_ICONS.md).
+
 Native shader compilation uses Slang 2026.19. Windows prepares its verified
 compiler automatically when the Slang folder is empty. Its compiler currently
 requires 64-bit Windows; a 32-bit app on a 64-bit AMD64 OS can launch that tool
@@ -42,6 +54,10 @@ still needs a renderer. Use SPIR-V/WGSL for Vulkan or GLSL for OpenGL. A shader
 compiler for a genuinely 32-bit OS remains open.
 Current checks validate shader compilation, reflection/translation and runtime
 requests; they do not substitute for physical GPU/input/audio qualification.
+Service-runtime packages may select `native_graphics = "textured-v1"` for a
+host-pinned textured raster profile with one RGBA8 2D texture/sampler pair. It
+still uses the WGSL/SPIR-V Vulkan preparation path; GLSL/OpenGL is only for the
+ordinary 2D shader service.
 
 The legacy C-based engines below retain direct platform support and remain
 blocked. Their historical optional build/play controls and compiler exchanges

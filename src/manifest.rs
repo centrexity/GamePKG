@@ -258,10 +258,16 @@ pub struct Achievement {
     pub title: String,
     pub description: String,
 }
+/// Host-reviewed shader selectors for the fixed `textured-v1` raster profile.
+pub const TEXTURED_V1_SHADER_SOURCE: &str = "shaders/textured_v1.slang";
+pub const TEXTURED_V1_VERTEX_ENTRY: &str = "vertexMain";
+pub const TEXTURED_V1_FRAGMENT_ENTRY: &str = "fragmentMain";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum NativeGraphics {
     VertexColorV1,
+    TexturedV1,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -686,6 +692,32 @@ impl Manifest {
                     && m.shaders.iter().filter(|shader| shader.stage == "fragment").count() == 1,
                 "vertex-color-v1 requires a native service package and one vertex and one fragment Slang entry"
             ),
+            Some(NativeGraphics::TexturedV1) => {
+                anyhow::ensure!(
+                    m.uses_service_runtime()
+                        && m.shaders.len() == 2
+                        && m.shaders.iter().filter(|shader| shader.stage == "vertex").count() == 1
+                        && m.shaders.iter().filter(|shader| shader.stage == "fragment").count() == 1,
+                    "textured-v1 requires a native service package and one vertex and one fragment Slang entry"
+                );
+                let vertex = m
+                    .shaders
+                    .iter()
+                    .find(|shader| shader.stage == "vertex")
+                    .context("missing textured-v1 vertex entry")?;
+                let fragment = m
+                    .shaders
+                    .iter()
+                    .find(|shader| shader.stage == "fragment")
+                    .context("missing textured-v1 fragment entry")?;
+                anyhow::ensure!(
+                    vertex.source == TEXTURED_V1_SHADER_SOURCE
+                        && vertex.entry == TEXTURED_V1_VERTEX_ENTRY
+                        && fragment.source == TEXTURED_V1_SHADER_SOURCE
+                        && fragment.entry == TEXTURED_V1_FRAGMENT_ENTRY,
+                    "textured-v1 requires the host-reviewed Slang source and entries"
+                );
+            }
             None if m.uses_service_runtime() => anyhow::ensure!(
                 m.shaders.is_empty(),
                 "native service Slang shaders require a supported native_graphics profile"
@@ -1017,6 +1049,56 @@ stage = "fragment"
                 .as_bytes()
         )
         .is_err());
+    }
+
+    #[test]
+    fn textured_native_profile_requires_the_host_reviewed_stages() {
+        let original = include_str!("../examples/minimal/manifest.toml");
+        let base = format!("native_services = true\nnative_graphics = \"textured-v1\"\n{original}");
+        let shaders = format!(
+            r#"
+[[shaders]]
+source = "{}"
+entry = "{}"
+stage = "vertex"
+
+[[shaders]]
+source = "{}"
+entry = "{}"
+stage = "fragment"
+"#,
+            TEXTURED_V1_SHADER_SOURCE,
+            TEXTURED_V1_VERTEX_ENTRY,
+            TEXTURED_V1_SHADER_SOURCE,
+            TEXTURED_V1_FRAGMENT_ENTRY
+        );
+        let valid = format!("{base}{shaders}");
+        assert_eq!(
+            Manifest::parse(valid.as_bytes()).unwrap().native_graphics,
+            Some(NativeGraphics::TexturedV1)
+        );
+        assert!(Manifest::parse(base.as_bytes()).is_err());
+        assert!(Manifest::parse(
+            valid
+                .replace(TEXTURED_V1_SHADER_SOURCE, "shaders/scene.slang")
+                .as_bytes()
+        )
+        .is_err());
+        assert!(Manifest::parse(
+            valid
+                .replace(TEXTURED_V1_FRAGMENT_ENTRY, "sceneMain")
+                .as_bytes()
+        )
+        .is_err());
+        assert!(Manifest::parse(
+            valid
+                .replace("native_services = true", "native_services = false")
+                .as_bytes()
+        )
+        .is_err());
+        assert!(toml::to_string(&Manifest::parse(valid.as_bytes()).unwrap())
+            .unwrap()
+            .contains("native_graphics = \"textured-v1\""));
     }
 }
 

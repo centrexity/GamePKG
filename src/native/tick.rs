@@ -3,7 +3,7 @@ use crate::manifest::{Manifest, NativeGraphics};
 use crate::port_host::owner::VerifiedAssets;
 use crate::port_host::{
     admission::CheckedSources,
-    graphics::{PipelineRecipe, VerifiedPipelines},
+    graphics::{textured_v1_recipe, PipelineRecipe, VerifiedPipelines},
     preparation::{self, Artifact, Bootstrap, ExecutableReceipt, LocalLayout, Plan, Target},
     process::{NativeLaunch, Process},
 };
@@ -74,9 +74,6 @@ fn prepare_graphics(
     settings: &crate::settings::Settings,
 ) -> Result<Option<VerifiedPipelines>> {
     let manifest = sources.manifest();
-    let Some(NativeGraphics::VertexColorV1) = manifest.native_graphics else {
-        return Ok(None);
-    };
     use eframe::wgpu;
     let stage = |stage| {
         manifest
@@ -86,20 +83,24 @@ fn prepare_graphics(
             .cloned()
             .context("missing native Slang stage")
     };
-    let recipe = PipelineRecipe {
-        vertex: stage("vertex")?,
-        fragment: stage("fragment")?,
-        source_hashes: None,
-        stride: 32,
-        attributes: wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4].to_vec(),
-        uniform_bytes: 64,
-        textures: Vec::new(),
-        blend: None,
-        cull: None,
-        depth_write: true,
-        depth_compare: wgpu::CompareFunction::LessEqual,
-        raster: Default::default(),
-        uniform_policy: Default::default(),
+    let recipe = match manifest.native_graphics {
+        Some(NativeGraphics::VertexColorV1) => PipelineRecipe {
+            vertex: stage("vertex")?,
+            fragment: stage("fragment")?,
+            source_hashes: None,
+            stride: 32,
+            attributes: wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4].to_vec(),
+            uniform_bytes: 64,
+            textures: Vec::new(),
+            blend: None,
+            cull: None,
+            depth_write: true,
+            depth_compare: wgpu::CompareFunction::LessEqual,
+            raster: Default::default(),
+            uniform_policy: Default::default(),
+        },
+        Some(NativeGraphics::TexturedV1) => textured_v1_recipe(),
+        None => return Ok(None),
     };
     VerifiedPipelines::prepare(root, sources, package, settings, vec![recipe], 1).map(Some)
 }
