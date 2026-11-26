@@ -4644,8 +4644,11 @@ post-branch fetch faults, retirement counts, ESP/ECX, stack bytes, unchanged
 cached CS/LDTR and pending FP banks pass host ASan/UB/leak, actual Linux32 UB,
 MIPS32 big-endian/QEMU and GCC/mixed Clang-GCC Windows32/Wine. The maintainer
 script `tools/check_takedawn_near_dispatch.sh` and portable/Windows-link CI
-gates reproduce this qualification. No player Python or external game crates
-are introduced.
+gates reproduce this qualification. The ESP=1 wrap rows admit exactly two
+physical fault deliveries, `#SS(0)` on hosts whose SS descriptor stops at
+4 GiB-4 and non-present `#PF(6)` on flat-SS hosts; replay accepts only those two
+shapes and still checks rollback, stack bytes, retirement and FP state. No
+player Python or external game crates are introduced.
 
 Final generator suites pass 173 host and 117 Windows tests, zero failures or
 ignored tests; strict lint, formatting and CI syntax checks pass. The prior far

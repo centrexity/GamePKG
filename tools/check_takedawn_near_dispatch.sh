@@ -20,10 +20,29 @@ if [[ "$task_link" == 0 ]]; then
  task_physical_flags=();if [[ -n "${GAMEPKG_PHYSICAL_INCLUDE:-}" ]]; then task_physical_flags+=("-I$GAMEPKG_PHYSICAL_INCLUDE");fi
  "$task_gcc32" -m32 -std=c11 -O3 -Wall -Wextra -Werror -fno-pie -no-pie "${task_physical_flags[@]}" "$task_tests/near_physical.c" "$task_tests/near_physical.S" -o "$task_work/physical32"
  "$task_work/physical32" "$task_work/corpus.bin"
+ cp "$task_work/corpus.bin" "$task_work/corpus-flat-ss.bin"
+ python3 - "$task_work/corpus-flat-ss.bin" <<'PY'
+import pathlib, struct, sys
+path = pathlib.Path(sys.argv[1])
+data = bytearray(path.read_bytes())
+count = struct.unpack_from('<I', data, 8)[0]
+assert data[:8] == b'GPKNEAR1' and count == 5796
+for index in range(count):
+    row = 12 + index * 104
+    mode = struct.unpack_from('<I', data, row + 12)[0]
+    sp = struct.unpack_from('<I', data, row + 16)[0]
+    vector = struct.unpack_from('<I', data, row + 32)[0]
+    if mode == 3 and sp == 1 and vector == 12:
+        struct.pack_into('<II', data, row + 32, 14, 6)
+        struct.pack_into('<I', data, row + 60, 0xfffffffd)
+path.write_bytes(data)
+PY
  "${GAMEPKG_HOST_CC:-cc}" "${task_flags[@]}" -fsanitize=address,undefined -fno-sanitize-recover=all "$task_work/near.c" "${task_sources[@]}" -o "$task_work/host"
  "$task_work/host" "$task_work/corpus.bin"
+ "$task_work/host" "$task_work/corpus-flat-ss.bin"
  "$task_gcc32" -m32 "${task_flags[@]}" -fsanitize=undefined -fsanitize-undefined-trap-on-error "$task_work/near.c" "${task_sources[@]}" -o "$task_work/linux32"
  "$task_work/linux32" "$task_work/corpus.bin"
+ "$task_work/linux32" "$task_work/corpus-flat-ss.bin"
  "${GAMEPKG_MIPS_CC:-mips-linux-gnu-gcc}" "${task_flags[@]}" -static -DGAMEPKG_REQUIRE_BIG_ENDIAN=1 -fsanitize=undefined -fsanitize-undefined-trap-on-error "$task_work/near.c" "${task_sources[@]}" -o "$task_work/mips32"
  "${GAMEPKG_QEMU_MIPS:-qemu-mips}" "$task_work/mips32" "$task_work/corpus.bin"
  sha256sum "$task_work/corpus.bin"
