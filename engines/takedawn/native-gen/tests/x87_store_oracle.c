@@ -451,7 +451,11 @@ static void fault_priority(const Image *original) {
                   ? (GamePkgExt80){UINT64_C(0x8000000000000001), 0x3fff}
                   : edges[2];
           unsigned cw = scenario == 0 ? 0x37f : scenario == 5 ? 0x35f : 0x40;
-          prepare(&fault_before, &initial, op, cw, 2, scenario == 1, v);
+          /* Keep the physical page-fault probe unambiguous: an empty ST(0)
+           * lets one x87 profile defer an invalid exception instead of
+           * touching the guard page. Empty-stack priority is still checked by
+           * faults() and deferred_faults() against the generated model. */
+          prepare(&fault_before, &initial, op, cw, 2, 0, v);
           if (scenario == 2) {
             fault_before.b[2] = 0x81;
             fault_before.b[3] |= 0x80;
@@ -466,11 +470,6 @@ static void fault_priority(const Image *original) {
           assert(sigaction(SIGSEGV, &action, 0) == 0 &&
                  sigaction(SIGFPE, &action, 0) == 0);
           __asm__ volatile("fxrstor %0" ::"m"(fault_before) : FX_CLOBBERS);
-          /* Some x87 implementations sanitize tag bits on FXRSTOR, so the
-           * empty-source scenario must explicitly free ST(0) before the
-           * physical store; the generated model already starts with that tag. */
-          if (scenario == 1)
-            __asm__ volatile("ffree %%st(0)" ::: "memory");
           if (scenario != 2)
             __asm__ volatile("fnop" ::: "memory");
 #ifdef __x86_64__
