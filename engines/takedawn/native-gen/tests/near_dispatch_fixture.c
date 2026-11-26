@@ -94,6 +94,21 @@ static void crossing_fetch(uint32_t pc) {
     return;
   assert(!"boundary sentinel must fault before execution");
 }
+static void report_stack(const Row *r) {
+  fprintf(stderr,
+          "near stack kind=%u mode=%u target=%u sp=%08x cx=%08x flags=%x "
+          "vector=%u err=%u ip=%x addr=%08x after_sp=%08x after_cx=%08x "
+          "after_flags=%x window=%u expected=",
+          r->kind, r->mode, r->target, r->sp, r->cx, r->flags, r->vector,
+          r->error, r->ip, r->address, r->after_sp, r->after_cx, r->after_flags,
+          r->window);
+  for (unsigned i = 0; i < 32; ++i)
+    fprintf(stderr, "%02x", r->stack[i]);
+  fprintf(stderr, " actual=");
+  for (unsigned i = 0; i < 32; ++i)
+    fprintf(stderr, "%02x", stack[r->window + i]);
+  fputc('\n', stderr);
+}
 static void execute(const Row *r, unsigned actual) {
   assert(r->kind < 23 &&
          (r->target == 64 || r->target == 128 || r->target == 127) &&
@@ -198,6 +213,8 @@ static void execute(const Row *r, unsigned actual) {
          g_eflags == (r->after_flags & ~0x10000u) && g_ebx == 0x55667788 &&
          g_edx == 0x44556677 && g_esi == 0x12000000 && g_edi == r->target &&
          !g_df);
+  if (memcmp(stack + r->window, r->stack, 32))
+    report_stack(r);
   assert(!memcmp(stack + r->window, r->stack, 32));
   assert(!gamepkg_x86_capture_registers(0, g_ebp, &after, &fp_source) &&
          !memcmp(&after.fp, &before.fp, sizeof(before.fp)));
