@@ -134,15 +134,18 @@ static GamePkgExt80 unwrap_ext80(GamePkgExt80 v) {
 static int adjacent_significands(uint64_t x, uint64_t y) {
   return x < y ? y - x == 1u : x - y == 1u;
 }
-/* Adjacent representable values at the denormal/minimum-normal boundary are
- * raw significands one apart; the generic adjacency check deliberately rejects
- * exponent zero, so handle this boundary only for tiny underflow results. */
+/* Adjacent representable values at the zero/denormal and denormal/minimum-
+ * normal boundaries are raw significands one apart; the generic adjacency
+ * check deliberately rejects exponent zero, so handle these boundaries only
+ * for tiny underflow results. */
 static int adjacent_tiny_ext80(GamePkgExt80 x, GamePkgExt80 y) {
   x = unwrap_ext80(x);
   y = unwrap_ext80(y);
   if ((x.sign_exponent ^ y.sign_exponent) & 0x8000u)
     return 0;
   unsigned xe = x.sign_exponent & 0x7fffu, ye = y.sign_exponent & 0x7fffu;
+  if (xe == 0u && ye == 0u)
+    return adjacent_significands(x.significand, y.significand);
   if (xe == 0u && ye == 1u)
     return adjacent_significands(x.significand, y.significand);
   if (ye == 0u && xe == 1u)
@@ -558,6 +561,10 @@ int main(void) {
     assert(corpus && fwrite("GPKXSCN1", 1, 8, corpus) == 8);
     word(0);
   }
+  assert(adjacent_tiny_ext80((GamePkgExt80){0, 0},
+                             (GamePkgExt80){1, 0}));
+  assert(!adjacent_tiny_ext80((GamePkgExt80){0, 0},
+                              (GamePkgExt80){2, 0}));
   gamepkg_x86_x87_bind_segments(cs, 0x23, 0x2b, 0x3b);
   uint64_t rng = 0x123456789abcdef;
   unsigned n = sizeof(edges) / sizeof(*edges);
