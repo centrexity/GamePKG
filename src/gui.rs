@@ -9,6 +9,7 @@ mod drops;
 mod game_colors;
 mod game_page;
 mod input;
+mod library;
 mod library_view;
 pub(crate) mod linear_sprites;
 mod multiplayer;
@@ -129,6 +130,7 @@ pub struct App {
     history: HashMap<String, crate::progress::Record>,
     usage: HashMap<String, crate::storage::Usage>,
     library_space: Option<crate::storage::Space>,
+    library_scanner: library::Scanner,
     storage_scanner: storage::Scanner,
     preview: Option<(Vec<Vec<u8>>, std::time::Instant, egui::TextureHandle)>,
 }
@@ -314,7 +316,6 @@ impl App {
         }
     }
     fn refresh(&mut self, ctx: &egui::Context) {
-        self.storage_scanner.invalidate();
         self.recordings = None;
         match crate::registry::default_root().and_then(|root| crate::catalog::sources::lists(&root))
         {
@@ -331,161 +332,182 @@ impl App {
                 self.status = format!("Unable to read catalog: {e:#}");
             }
         }
-        match crate::registry::default_root()
-            .and_then(|root| crate::registry::inspect_library(&root))
-        {
-            Ok(report) => {
-                self.rejected = report.rejected;
-                let games = report.games;
-                let scopes: HashSet<String> = games.iter().filter_map(multiplayer::scope).collect();
-                self.network_drafts.retain(|key, _| scopes.contains(key));
-                let video_scopes: HashSet<String> = games
-                    .iter()
-                    .filter_map(|m| crate::video_selections::identity(m).ok())
-                    .collect();
-                self.video_drafts
-                    .retain(|key, _| video_scopes.contains(key));
-                self.icons.clear();
-                self.package_notices.clear();
-                self.built.clear();
-                self.wasm_built.clear();
-                if let Ok(root) = crate::registry::default_root() {
-                    self.rom_paths.clear();
-                    self.data_paths.clear();
-                    self.history.clear();
-                    self.usage.clear();
-                    self.library_space = None;
-                    self.storage_scanner
-                        .request(root.clone(), games.clone(), ctx.clone());
-                    for m in &games {
-                        if let Ok(scope) = crate::video_selections::identity(m) {
-                            match crate::video_selections::load(&root, m) {
-                                Ok(selection) => self
-                                    .video_drafts
-                                    .entry(scope)
-                                    .or_default()
-                                    .loaded(selection),
-                                Err(error) => {
-                                    self.status =
-                                        format!("Unable to read display settings: {error:#}")
-                                }
-                            }
-                        }
+        match crate::registry::default_root() {
+            Ok(root) => self.request_library(root, ctx),
+            Err(error) => {
+                self.clear_library(Some(format!("Unable to read installed library: {error:#}")))
+            }
+        }
+    }
+    fn request_library(&mut self, root: PathBuf, ctx: &egui::Context) {
+        self.storage_scanner.invalidate();
+        self.library_scanner.request(root, ctx.clone());
+    }
+    fn library_loading(&self) -> bool {
+        self.library_scanner.pending()
+    }
+    fn poll_library(&mut self, ctx: &egui::Context) {
+        if let Some(snapshot) = self.library_scanner.poll() {
+            match snapshot.result {
+                Ok(report) => self.apply_library_report(snapshot.root, report, ctx),
+                Err(error) => {
+                    self.clear_library(Some(format!("Unable to read installed library: {error}")))
+                }
+            }
+            ctx.request_repaint();
+        }
+    }
+    fn apply_library_report(
+        &mut self,
+        root: PathBuf,
+        report: crate::registry::LibraryInspection,
+        ctx: &egui::Context,
+    ) {
+        self.rejected = report.rejected;
+        let games = report.games;
+        let scopes: HashSet<String> = games.iter().filter_map(multiplayer::scope).collect();
+        self.network_drafts.retain(|key, _| scopes.contains(key));
+        let video_scopes: HashSet<String> = games
+            .iter()
+            .filter_map(|m| crate::video_selections::identity(m).ok())
+            .collect();
+        self.video_drafts
+            .retain(|key, _| video_scopes.contains(key));
+        self.icons.clear();
+        self.package_notices.clear();
+        self.built.clear();
+        self.wasm_built.clear();
+        self.rom_paths.clear();
+        self.data_paths.clear();
+        self.history.clear();
+        self.usage.clear();
+        self.library_space = None;
+        self.storage_scanner
+            .request(root.clone(), games.clone(), ctx.clone());
+        for m in &games {
+            if let Ok(scope) = crate::video_selections::identity(m) {
+                match crate::video_selections::load(&root, m) {
+                    Ok(selection) => self
+                        .video_drafts
+                        .entry(scope)
+                        .or_default()
+                        .loaded(selection),
+                    Err(error) => {
+                        self.status = format!("Unable to read display settings: {error:#}")
+                    }
+                }
+            }
 
-                        if let Some(scope) = multiplayer::scope(m) {
-                            match crate::server_selections::load(&root, m) {
-                                Ok(selection) => self
-                                    .network_drafts
-                                    .entry(scope)
-                                    .or_default()
-                                    .loaded(selection),
-                                Err(error) => {
-                                    self.status =
-                                        format!("Unable to read multiplayer settings: {error:#}")
-                                }
-                            }
-                        }
-                        match crate::progress::load(&root, &m.id, &m.creator_key) {
-                            Ok(record) => {
-                                self.history.insert(m.id.clone(), record);
-                            }
-                            Err(e) => self.status = format!("Unable to read play history: {e}"),
-                        }
-                        if let Ok(Some(path)) = crate::game_data::load(&root, m) {
-                            self.data_paths
-                                .insert(m.id.clone(), path.to_string_lossy().into_owned());
-                        }
-                        if m.requires_rom {
-                            match crate::rom_selections::load(&root, m) {
-                                Ok(paths) => {
-                                    self.rom_paths.insert(m.id.clone(), paths);
-                                }
-                                Err(error) => {
-                                    self.status =
-                                        format!("Unable to read remembered ROM files: {error:#}")
-                                }
-                            }
-                        }
-                        if crate::build::is_built(&root, &m.id).unwrap_or(false) {
-                            self.wasm_built.insert(m.id.clone());
-                        }
-                        if crate::native::is_built(&root, &m.id).unwrap_or(false) {
-                            self.built.insert(m.id.clone());
-                        }
-                        let decoded = (|| -> anyhow::Result<_> {
-                            let mut pkg = crate::archive::Package::open(
-                                &root.join(format!("{}.gamepkg", m.id)),
-                            )?;
-                            if let Ok(bytes) = pkg.read("NOTICE") {
-                                if bytes.len() <= 65536 {
-                                    if let Ok(text) = String::from_utf8(bytes) {
-                                        self.package_notices.insert(m.id.clone(), text);
-                                    }
-                                }
-                            }
-                            let bytes = pkg.read("thumbnail.png")?;
-                            let mut reader = image::ImageReader::with_format(
-                                std::io::Cursor::new(bytes),
-                                image::ImageFormat::Png,
-                            );
-                            let mut limits = image::Limits::default();
-                            limits.max_image_width = Some(512);
-                            limits.max_image_height = Some(512);
-                            limits.max_alloc = Some(4 * 1024 * 1024);
-                            reader.limits(limits);
-                            let icon = reader.decode()?.to_rgba8();
-                            anyhow::ensure!(
-                                icon.width() >= 16 && icon.height() >= 16,
-                                "placeholder thumbnail"
-                            );
-                            Ok(egui::ColorImage::from_rgba_unmultiplied(
-                                [icon.width() as usize, icon.height() as usize],
-                                icon.as_raw(),
-                            ))
-                        })();
-                        let decoded = decoded.or_else(|error| -> anyhow::Result<_> {
-                            let (bytes, notice) = artwork::fallback(&m.id).ok_or(error)?;
-                            let icon = image::load_from_memory(bytes)?.to_rgba8();
-                            self.package_notices
-                                .entry(m.id.clone())
-                                .or_default()
-                                .push_str(&format!(
-                                    "\n\nLibrary fallback artwork, provided by GamePKG:\n{notice}"
-                                ));
-                            Ok(egui::ColorImage::from_rgba_unmultiplied(
-                                [icon.width() as usize, icon.height() as usize],
-                                icon.as_raw(),
-                            ))
-                        });
-                        if let Ok(icon) = decoded {
-                            self.icons.insert(
-                                m.id.clone(),
-                                ctx.load_texture(&m.id, icon, egui::TextureOptions::LINEAR),
-                            );
+            if let Some(scope) = multiplayer::scope(m) {
+                match crate::server_selections::load(&root, m) {
+                    Ok(selection) => self
+                        .network_drafts
+                        .entry(scope)
+                        .or_default()
+                        .loaded(selection),
+                    Err(error) => {
+                        self.status = format!("Unable to read multiplayer settings: {error:#}")
+                    }
+                }
+            }
+            match crate::progress::load(&root, &m.id, &m.creator_key) {
+                Ok(record) => {
+                    self.history.insert(m.id.clone(), record);
+                }
+                Err(e) => self.status = format!("Unable to read play history: {e}"),
+            }
+            if let Ok(Some(path)) = crate::game_data::load(&root, m) {
+                self.data_paths
+                    .insert(m.id.clone(), path.to_string_lossy().into_owned());
+            }
+            if m.requires_rom {
+                match crate::rom_selections::load(&root, m) {
+                    Ok(paths) => {
+                        self.rom_paths.insert(m.id.clone(), paths);
+                    }
+                    Err(error) => {
+                        self.status = format!("Unable to read remembered ROM files: {error:#}")
+                    }
+                }
+            }
+            if crate::build::is_built(&root, &m.id).unwrap_or(false) {
+                self.wasm_built.insert(m.id.clone());
+            }
+            if crate::native::is_built(&root, &m.id).unwrap_or(false) {
+                self.built.insert(m.id.clone());
+            }
+            let decoded = (|| -> anyhow::Result<_> {
+                let mut pkg =
+                    crate::archive::Package::open(&root.join(format!("{}.gamepkg", m.id)))?;
+                if let Ok(bytes) = pkg.read("NOTICE") {
+                    if bytes.len() <= 65536 {
+                        if let Ok(text) = String::from_utf8(bytes) {
+                            self.package_notices.insert(m.id.clone(), text);
                         }
                     }
                 }
-                self.installed = games;
-                if let Ok(root) = crate::registry::default_root() {
-                    self.sync_rom_selection(&root);
-                }
+                let bytes = pkg.read("thumbnail.png")?;
+                let mut reader = image::ImageReader::with_format(
+                    std::io::Cursor::new(bytes),
+                    image::ImageFormat::Png,
+                );
+                let mut limits = image::Limits::default();
+                limits.max_image_width = Some(512);
+                limits.max_image_height = Some(512);
+                limits.max_alloc = Some(4 * 1024 * 1024);
+                reader.limits(limits);
+                let icon = reader.decode()?.to_rgba8();
+                anyhow::ensure!(
+                    icon.width() >= 16 && icon.height() >= 16,
+                    "placeholder thumbnail"
+                );
+                Ok(egui::ColorImage::from_rgba_unmultiplied(
+                    [icon.width() as usize, icon.height() as usize],
+                    icon.as_raw(),
+                ))
+            })();
+            let decoded = decoded.or_else(|error| -> anyhow::Result<_> {
+                let (bytes, notice) = artwork::fallback(&m.id).ok_or(error)?;
+                let icon = image::load_from_memory(bytes)?.to_rgba8();
+                self.package_notices
+                    .entry(m.id.clone())
+                    .or_default()
+                    .push_str(&format!(
+                        "\n\nLibrary fallback artwork, provided by GamePKG:\n{notice}"
+                    ));
+                Ok(egui::ColorImage::from_rgba_unmultiplied(
+                    [icon.width() as usize, icon.height() as usize],
+                    icon.as_raw(),
+                ))
+            });
+            if let Ok(icon) = decoded {
+                self.icons.insert(
+                    m.id.clone(),
+                    ctx.load_texture(&m.id, icon, egui::TextureOptions::LINEAR),
+                );
             }
-            Err(e) => {
-                self.installed.clear();
-                self.rom_identity = None;
-                self.rom_game = None;
-                self.rom_path.clear();
-                self.additional_rom_paths.clear();
-                self.history.clear();
-                self.usage.clear();
-                self.library_space = None;
-                self.rejected.clear();
-                self.icons.clear();
-                self.package_notices.clear();
-                self.built.clear();
-                self.wasm_built.clear();
-                self.status = format!("Unable to read installed library: {e:#}");
-            }
+        }
+        self.installed = games;
+        self.sync_rom_selection(&root);
+    }
+    fn clear_library(&mut self, error: Option<String>) {
+        self.library_scanner.invalidate();
+        self.storage_scanner.invalidate();
+        self.installed.clear();
+        self.rom_identity = None;
+        self.rom_game = None;
+        self.rom_path.clear();
+        self.additional_rom_paths.clear();
+        self.history.clear();
+        self.usage.clear();
+        self.library_space = None;
+        self.rejected.clear();
+        self.icons.clear();
+        self.package_notices.clear();
+        self.built.clear();
+        self.wasm_built.clear();
+        if let Some(error) = error {
+            self.status = error;
         }
     }
     fn inspect_package(&mut self, source: String, local: Option<PathBuf>) {
@@ -579,6 +601,7 @@ impl eframe::App for App {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             return;
         }
+        self.poll_library(ctx);
         if let Some(snapshot) = self.storage_scanner.poll() {
             self.library_space = snapshot.space;
             self.usage = snapshot.usage;
@@ -1740,6 +1763,9 @@ impl eframe::App for App {
                     });
                 }
             });
+            if self.library_loading() {
+                ui.label(egui::RichText::new("Loading library…").strong());
+            }
             ui.label("Choose a game to build, play or explore.");
             ui.add_space(12.0);
             self.library_filters(ui);
@@ -1846,6 +1872,91 @@ mod shutdown_error_tests {
         assert_eq!(
             failure.as_deref(),
             Some("Unable to finish the game session: renderer stopped")
+        );
+    }
+}
+
+#[cfg(test)]
+mod async_library_tests {
+    use super::*;
+    use crate::registry::LibraryInspection;
+    use std::{
+        path::Path,
+        sync::{mpsc, Arc, Mutex},
+        time::{Duration, Instant},
+    };
+
+    #[test]
+    fn first_frame_request_stays_responsive_and_stale_verification_is_ignored() {
+        let (started, starts) = mpsc::channel();
+        let (release, released) = mpsc::channel();
+        let released = Arc::new(Mutex::new(released));
+        let mut manifest: crate::manifest::Manifest =
+            toml::from_str(include_str!("../ports/doom/manifest.toml")).unwrap();
+        manifest.requires_rom = false;
+        let expected_id = manifest.id.clone();
+        let report_manifest = manifest.clone();
+        let compute = move |root: &Path| -> Result<LibraryInspection, String> {
+            started.send(root.to_path_buf()).unwrap();
+            released.lock().unwrap().recv().unwrap();
+            Ok(LibraryInspection {
+                games: vec![report_manifest.clone()],
+                rejected: vec![("broken.gamepkg".into(), "signature mismatch".into())],
+            })
+        };
+        let mut app = App {
+            library_scanner: library::Scanner::with_compute(compute),
+            ..App::default()
+        };
+        let ctx = egui::Context::default();
+
+        let start = Instant::now();
+        app.request_library(PathBuf::from("first"), &ctx);
+        assert!(
+            start.elapsed() < Duration::from_millis(500),
+            "the first frame must not wait for package verification"
+        );
+        assert!(app.library_loading(), "the loading state must be visible");
+        assert_eq!(
+            starts.recv_timeout(Duration::from_secs(2)).unwrap(),
+            PathBuf::from("first")
+        );
+
+        // Repeated refresh requests coalesce to the newest generation while
+        // the deliberately slow verification is still running.
+        app.request_library(PathBuf::from("discarded"), &ctx);
+        app.request_library(PathBuf::from("current"), &ctx);
+        assert!(app.library_loading());
+        assert!(app.installed.is_empty());
+
+        release.send(()).unwrap();
+        assert_eq!(
+            starts.recv_timeout(Duration::from_secs(2)).unwrap(),
+            PathBuf::from("current")
+        );
+        app.poll_library(&ctx);
+        assert!(
+            app.installed.is_empty(),
+            "the stale generation's result must not populate the library"
+        );
+        assert!(app.rejected.is_empty());
+        assert!(app.library_loading());
+
+        release.send(()).unwrap();
+        let until = Instant::now() + Duration::from_secs(2);
+        while app.installed.is_empty() {
+            app.poll_library(&ctx);
+            assert!(Instant::now() < until, "verification result never arrived");
+            std::thread::yield_now();
+        }
+        assert!(!app.library_loading());
+        assert_eq!(app.installed[0].id, expected_id);
+        assert_eq!(
+            app.rejected,
+            vec![(
+                "broken.gamepkg".to_string(),
+                "signature mismatch".to_string()
+            )]
         );
     }
 }

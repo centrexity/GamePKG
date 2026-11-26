@@ -25,6 +25,13 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-pagination-') as directory:
             image=root/'screen.png';subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(image)],env=env,check=True)
             subprocess.run(['convert',str(image),'-resize','200%',str(root/'ocr.png')],env=env,check=True)
             return ' '.join(subprocess.check_output(['tesseract',str(root/'ocr.png'),'stdout','--psm','11'],stderr=subprocess.DEVNULL,text=True).casefold().split())
+        def wait_for(part,timeout=15):
+            end=time.monotonic()+timeout
+            while True:
+                screen=text()
+                if part.casefold() in screen:return screen
+                assert time.monotonic()<end,screen
+                time.sleep(.1)
         def page(number,pages,title):
             screen=text();assert re.search(fr'page{number}[o0]+f{pages}(?!\d)', re.sub(r'[^a-z0-9]', '', screen)),screen
             assert title.casefold() in screen,screen
@@ -32,6 +39,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-pagination-') as directory:
             x,y=click_text(window,env,'Search',root,click=False,max_y=400)
             subprocess.run(['xdotool','mousemove','--window',window,str(x+130),str(y),'click','1','key','--clearmodifiers','ctrl+a'],env=env,check=True)
             subprocess.run(['xdotool','type','--clearmodifiers','--delay','0',query],env=env,check=True);time.sleep(.4)
+        wait_for('Installed Puzzle')
         page(1,3,'Installed Puzzle')
         click('Next page');page(2,3,'Catalog Game 019')
         click('Next page');page(3,3,'Catalog Game 039')
@@ -54,6 +62,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-pagination-') as directory:
         # Model an external catalog update that removes entries, then refresh.
         state=home/'catalog.gamepkglist';state.write_text('[[games]]'.join(state.read_text().split('[[games]]')[:3]))
         click('Refresh library',top=False)
+        wait_for('Installed Puzzle');wait_for('Catalog Game 000')
         screen=text();assert 'installed puzzle' in screen and 'catalog game 000' in screen,screen
         assert 'page 2' not in screen and 'no games match' not in screen,screen
         search('missing-entry');assert 'no games match your search and filters' in text()

@@ -38,25 +38,29 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-gui-') as directory:
             for word in words:
                 for field in ['left','top','width','height']:word[field]=str(int(word[field])//3)
             return ' '.join(word['text'] for word in words), words
-        text,words=read_screen('library-rejected.png')
-        assert 'Recovery Game' in text and '0.1.0' in text and 'Not built' in text, text
-        assert 'Unavailable package:' in text and 'broken.gamepkg' in text, text
-        assert 'Pending Recovery' in text and 'Not downloaded' in text, text
+        def wait_for(parts, timeout=15):
+            end=time.monotonic()+timeout
+            while True:
+                text,words=read_screen('library-wait.png')
+                if all(part in text for part in parts):return text,words
+                assert time.monotonic()<end, text
+                time.sleep(.1)
+        text,_=wait_for(['Recovery Game','Unavailable package:','broken.gamepkg','Pending Recovery'])
+        assert '0.1.0' in text and 'Not built' in text, text
+        assert 'Not downloaded' in text, text
         refresh=next(word for word in words if word['text']=='Refresh')
         library.rename(root/'saved-library');library.write_text('not a directory')
         subprocess.run(['xdotool','mousemove','--window',window,str(int(refresh['left'])+int(refresh['width'])//2),str(int(refresh['top'])+int(refresh['height'])//2),'click','1'],env=env,check=True)
-        time.sleep(.5)
-        text,_=read_screen('library-unreadable.png')
-        assert 'Unable to read installed library' in text, text
+        text,_=wait_for(['Unable to read installed library'])
+        subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(project/'target/library-unreadable.png')],env=env,check=True)
         assert 'Recovery Game' not in text and 'com.gamepkg.minimal' not in text and 'broken.gamepkg' not in text, 'stale library rows remained: '+text
         assert 'Pending Recovery' not in text and 'com.example.pending-recovery' not in text, 'stale catalog rows remained: '+text
         library.unlink();(root/'saved-library').rename(library)
         click_text(window,env,'Refresh library',root)
-        time.sleep(.5)
-        text,_=read_screen('library-recovered.png')
-        assert 'Recovery Game' in text and '0.1.0' in text and 'Not built' in text, text
-        assert 'Unavailable package:' in text and 'broken.gamepkg' in text, text
-        assert 'Pending Recovery' in text and 'Not downloaded' in text, text
+        text,_=wait_for(['Recovery Game','Unavailable package:','broken.gamepkg','Pending Recovery'])
+        subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(project/'target/library-recovered.png')],env=env,check=True)
+        assert '0.1.0' in text and 'Not built' in text, text
+        assert 'Not downloaded' in text, text
         assert 'Unable to read installed library' not in text, text
         print('Library GUI passed: valid rows and rejected notices coexist; unreadable folders clear stale entries; restoring the folder recovers the library.')
     finally:
