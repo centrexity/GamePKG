@@ -134,33 +134,32 @@ static GamePkgExt80 unwrap_ext80(GamePkgExt80 v) {
 static int adjacent_significands(uint64_t x, uint64_t y) {
   return x < y ? y - x == 1u : x - y == 1u;
 }
-/* Adjacent representable values at the zero/denormal and denormal/minimum-
- * normal boundaries are raw significands one apart; the generic adjacency
- * check deliberately rejects exponent zero, so handle these boundaries only
- * for tiny underflow results. */
+/* Adjacent representable values in the smallest underflow binades are either
+ * raw significands one apart or a maximum significand followed by the minimum
+ * normal of the next binade. The generic adjacency check deliberately rejects
+ * exponent zero, so handle only these tiny binades; callers still require both
+ * values to pass MPFR accuracy and permit only derived status differences. */
+static int tiny_binade(unsigned e) { return e <= 3u; }
 static int adjacent_tiny_ext80(GamePkgExt80 x, GamePkgExt80 y) {
   x = unwrap_ext80(x);
   y = unwrap_ext80(y);
   if ((x.sign_exponent ^ y.sign_exponent) & 0x8000u)
     return 0;
   unsigned xe = x.sign_exponent & 0x7fffu, ye = y.sign_exponent & 0x7fffu;
-  if (xe == 0u && ye == 0u)
+  if (!tiny_binade(xe) || !tiny_binade(ye))
+    return 0;
+  if (xe == ye)
     return adjacent_significands(x.significand, y.significand);
-  if (xe == 0u && ye == 1u)
-    return adjacent_significands(x.significand, y.significand);
-  if (ye == 0u && xe == 1u)
-    return adjacent_significands(x.significand, y.significand);
-  /* The first normal binade has the same one-ulp spacing as the largest
-   * denormals and the binade above it, so adjacent results on either side of
-   * the minimum normal are also tiny underflow boundary differences. */
-  if (xe == 1u && ye == 1u)
-    return adjacent_significands(x.significand, y.significand);
-  if (xe == 1u && ye == 2u)
-    return x.significand == UINT64_MAX &&
-           y.significand == UINT64_C(0x8000000000000000);
-  if (ye == 1u && xe == 2u)
-    return y.significand == UINT64_MAX &&
-           x.significand == UINT64_C(0x8000000000000000);
+  if (xe + 1u == ye)
+    return xe == 0u
+               ? adjacent_significands(x.significand, y.significand)
+               : x.significand == UINT64_MAX &&
+                     y.significand == UINT64_C(0x8000000000000000);
+  if (ye + 1u == xe)
+    return ye == 0u
+               ? adjacent_significands(x.significand, y.significand)
+               : y.significand == UINT64_MAX &&
+                     x.significand == UINT64_C(0x8000000000000000);
   return 0;
 }
 static int same_ext80(GamePkgExt80 x, GamePkgExt80 y) {
@@ -594,6 +593,18 @@ int main(void) {
   assert(!adjacent_tiny_ext80(
       (GamePkgExt80){UINT64_MAX - 1, 1},
       (GamePkgExt80){UINT64_C(0x8000000000000000), 2}));
+  assert(adjacent_tiny_ext80(
+      (GamePkgExt80){UINT64_C(0x8000000000000000), 2},
+      (GamePkgExt80){UINT64_C(0x8000000000000001), 2}));
+  assert(adjacent_tiny_ext80(
+      (GamePkgExt80){UINT64_MAX, 2},
+      (GamePkgExt80){UINT64_C(0x8000000000000000), 3}));
+  assert(!adjacent_tiny_ext80(
+      (GamePkgExt80){UINT64_C(0x8000000000000000), 2},
+      (GamePkgExt80){UINT64_C(0x8000000000000002), 2}));
+  assert(!adjacent_tiny_ext80(
+      (GamePkgExt80){UINT64_MAX, 3},
+      (GamePkgExt80){UINT64_C(0x8000000000000000), 4}));
   gamepkg_x86_x87_bind_segments(cs, 0x23, 0x2b, 0x3b);
   uint64_t rng = 0x123456789abcdef;
   unsigned n = sizeof(edges) / sizeof(*edges);
