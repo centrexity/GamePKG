@@ -206,19 +206,20 @@ fn generated_trig_push_accepts_tiny_sincos_adjacent_value() {
 
 #[test]
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-fn generated_trig_push_accepts_verified_tiny_sincos_ue_difference() {
+fn generated_trig_push_accepts_verified_tiny_sincos_underflow_status_difference() {
     let source = fixture();
     let marker = "unsigned sw = rd(after.b + 2), valid = 0, status_difference = 0;";
     assert_eq!(source.matches(marker).count(), 1);
-    // Flip only the captured UE bit for a tiny denormal input; result values
-    // and every other status/state bit stay unchanged.
+    // Flip the captured UE bit for a tiny denormal input. ES/B are derived
+    // from UE and may diverge on other hardware; result values and every
+    // other status/state bit stay unchanged.
     let altered = source.replace(marker, &format!(
-        "{marker}\n  if (!which && !empty && a.sign_exponent==1 && a.significand==UINT64_C(0x8000000000000000) && ((sw>>11)&7)==((top+7)&7)) {{ sw^=0x10u; wr(after.b+2,sw); fprintf(stderr,\"FORCED_TINY_UE\\n\"); }}"
+        "{marker}\n  if (!which && !empty && a.sign_exponent==1 && a.significand==UINT64_C(0x8000000000000000) && ((sw>>11)&7)==((top+7)&7)) {{ sw^=0x10u; wr(after.b+2,sw); fprintf(stderr,\"FORCED_TINY_UNDERFLOW\\n\"); }}"
     ));
     let out = run_fixture(altered);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        stderr.contains("FORCED_TINY_UE"),
+        stderr.contains("FORCED_TINY_UNDERFLOW"),
         "tiny case was not exercised: {stderr}"
     );
     assert!(

@@ -313,7 +313,7 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
        * ES/B bits. Accept only that verified difference plus the measured C1
        * divergence; every other status/state bit stays exact. */
       unsigned underflow_bits = 0x10u | 0x80u | 0x8000u;
-      if ((sw ^ z->status) & 0x10u) {
+      if ((sw ^ z->status) & underflow_bits) {
         status_difference |= underflow_bits;
         sw = (sw & ~underflow_bits) | (z->status & underflow_bits);
         wr(after.b + 2, sw);
