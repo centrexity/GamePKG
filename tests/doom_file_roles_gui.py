@@ -91,7 +91,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-file-roles-gui-') as temporary:
         assert next(iter(json.loads((library/'rom-selections.json').read_text()).values()))==expected,'Cancelling cleared remembered files'
         expected[3]=str(moved)
         for attempt in range(3):
-            click_merge_field();choose_native_file(env,'Choose Patch Merge',moved)
+            click_merge_field();choose_native_file(env,'Choose Patch Merge',moved,from_list=True)
             deadline=time.monotonic()+20
             while time.monotonic()<deadline:
                 saved=next(iter(json.loads((library/'rom-selections.json').read_text()).values()))
