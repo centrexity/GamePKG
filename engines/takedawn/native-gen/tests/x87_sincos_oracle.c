@@ -151,10 +151,16 @@ static int adjacent_tiny_ext80(GamePkgExt80 x, GamePkgExt80 y) {
   if (ye == 0u && xe == 1u)
     return adjacent_significands(x.significand, y.significand);
   /* The first normal binade has the same one-ulp spacing as the largest
-   * denormals, so an adjacent overshoot at the minimum normal is also a tiny
-   * underflow boundary difference. */
+   * denormals and the binade above it, so adjacent results on either side of
+   * the minimum normal are also tiny underflow boundary differences. */
   if (xe == 1u && ye == 1u)
     return adjacent_significands(x.significand, y.significand);
+  if (xe == 1u && ye == 2u)
+    return x.significand == UINT64_MAX &&
+           y.significand == UINT64_C(0x8000000000000000);
+  if (ye == 1u && xe == 2u)
+    return y.significand == UINT64_MAX &&
+           x.significand == UINT64_C(0x8000000000000000);
   return 0;
 }
 static int same_ext80(GamePkgExt80 x, GamePkgExt80 y) {
@@ -579,6 +585,15 @@ int main(void) {
   assert(!adjacent_tiny_ext80(
       (GamePkgExt80){UINT64_C(0x8000000000000000), 1},
       (GamePkgExt80){UINT64_C(0x8000000000000001), 2}));
+  assert(adjacent_tiny_ext80(
+      (GamePkgExt80){UINT64_MAX, 1},
+      (GamePkgExt80){UINT64_C(0x8000000000000000), 2}));
+  assert(adjacent_tiny_ext80(
+      (GamePkgExt80){UINT64_C(0x8000000000000000), 2},
+      (GamePkgExt80){UINT64_MAX, 1}));
+  assert(!adjacent_tiny_ext80(
+      (GamePkgExt80){UINT64_MAX - 1, 1},
+      (GamePkgExt80){UINT64_C(0x8000000000000000), 2}));
   gamepkg_x86_x87_bind_segments(cs, 0x23, 0x2b, 0x3b);
   uint64_t rng = 0x123456789abcdef;
   unsigned n = sizeof(edges) / sizeof(*edges);
