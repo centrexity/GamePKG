@@ -40,6 +40,11 @@ pathlib.Path(args[args.index('--output')+1]).write_text(responses[url]);print('2
   app=subprocess.Popen([str(PROJECT/'target/release/gamepkg-gui')],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
   window,_=game_window(env,'GamePKG');subprocess.run(['xdotool','windowsize',window,'1450','1150','windowfocus',window],env=env,check=True);time.sleep(.4)
  def click(text):click_text(window,env,text,root,timeout=25)
+ def to_top():
+  # Refresh leaves the long library page scrolled near its bottom; return to
+  # the header before locating controls that live above the game rows.
+  subprocess.run(['xdotool','mousemove','--window',window,'1400','600','click','--repeat','40','--delay','20','4'],env=env,check=True)
+  time.sleep(.3)
  try:
   launch();click('Add')
   _,hint_y=click_text(window,env,'Or drop a',root,click=False)
@@ -54,7 +59,7 @@ pathlib.Path(args[args.index('--output')+1]).write_text(responses[url]);print('2
   click('Back to library');click('Refresh library');await_state(lambda lists:len(lists[0]['games'])==3 and len(lists[1]['games'])==2)
   retained=saved()[0];responses[first]='invalid list';responses[second]=catalog(['two','other','third'],'3.0.0');publish()
   click('Refresh library');await_state(lambda lists:len(lists[1]['games'])==3);assert saved()[0]==retained,'Failed list lost last good snapshot'
-  click('Add');click('Remove list');click('Cancel');assert len(saved())==2,'Cancel removed a list'
+  to_top();click('Add');click('Remove list');click('Cancel');assert len(saved())==2,'Cancel removed a list'
   click('Remove list');click('Confirm removal');await_state(lambda lists:len(lists)==1)
   assert saved()[0]['url']==second
   listing=cli('list');assert 'com.example.one' not in listing and 'com.example.third' in listing
