@@ -10,7 +10,6 @@ concurrency:
   group: gamepkg-checks-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 jobs:
-jobs:
   test-core:
     runs-on: ubuntu-24.04
     env:
