@@ -1,7 +1,8 @@
 //! Offline locked Cargo builds with host-supplied bindings and no native fallback.
 use crate::{
     archive::Package,
-    registry,
+    manifest::Manifest,
+    registry::{self, VerifiedIdentity},
     verify::{digest, verify_embedded},
 };
 use anyhow::{bail, Context, Result};
@@ -60,24 +61,29 @@ fn installed(root: &Path, id: &str) -> Result<PathBuf> {
     registry::installed_manifest(root, id)?;
     Ok(root.join(format!("{id}.gamepkg")))
 }
-pub fn cache_path(root: &Path, id: &str) -> Result<PathBuf> {
-    let package_digest = crate::files::hash_archive(&installed(root, id)?)?;
-    Ok(root.join("builds").join(package_digest).join("game.wasm"))
+pub(crate) fn cache_path_for_digest(root: &Path, archive_digest: &str) -> PathBuf {
+    root.join("builds").join(archive_digest).join("game.wasm")
 }
-pub fn is_built(root: &Path, id: &str) -> Result<bool> {
-    if !crate::build_policy::supported(
-        registry::installed_manifest(root, id)?
-            .builtin_engine
-            .as_deref(),
-    ) {
+pub fn cache_path(root: &Path, id: &str) -> Result<PathBuf> {
+    let verified = registry::installed_verified(root, id)?;
+    Ok(cache_path_for_digest(
+        root,
+        &verified.identity.archive_digest,
+    ))
+}
+pub(crate) fn is_built_verified(
+    root: &Path,
+    manifest: &Manifest,
+    identity: &VerifiedIdentity,
+) -> Result<bool> {
+    if !crate::build_policy::supported(manifest.builtin_engine.as_deref()) {
         return Ok(false);
     }
 
-    let path = cache_path(root, id)?;
+    let path = cache_path_for_digest(root, &identity.archive_digest);
     let Ok(bytes) = crate::files::read_regular(&path, 32 * 1024 * 1024, false) else {
         return Ok(false);
     };
-    let manifest = registry::installed_manifest(root, id)?;
     if manifest.uses_service_runtime() {
         return Ok(false);
     }
@@ -98,8 +104,11 @@ pub fn is_built(root: &Path, id: &str) -> Result<bool> {
             return Ok(false);
         }
     }
-    Ok(artifact_has_tick(&bytes)
-        && crate::integrity::verify_build(&cache_path(root, id)?, &bytes).is_ok())
+    Ok(artifact_has_tick(&bytes) && crate::integrity::verify_build(&path, &bytes).is_ok())
+}
+pub fn is_built(root: &Path, id: &str) -> Result<bool> {
+    let verified = registry::installed_verified(root, id)?;
+    is_built_verified(root, &verified.manifest, &verified.identity)
 }
 pub(crate) fn artifact_has_tick(bytes: &[u8]) -> bool {
     if bytes.len() > 32 * 1024 * 1024 {

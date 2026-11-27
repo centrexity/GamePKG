@@ -91,6 +91,7 @@ pub struct Package {
     pub entries: BTreeMap<String, u64>,
     raw: CursorFile,
     verified: bool,
+    verified_identity: Option<Vec<u8>>,
     shared_refs: BTreeMap<String, crate::pool::Reference>,
     shared_files: BTreeMap<String, SharedSnapshot>,
 }
@@ -165,6 +166,7 @@ impl Package {
             entries,
             raw: raw_file,
             verified: false,
+            verified_identity: None,
             shared_refs: BTreeMap::new(),
             shared_files: BTreeMap::new(),
         })
@@ -223,6 +225,7 @@ impl Package {
             entries: self.entries.clone(),
             raw: self.raw.clone(),
             verified: true,
+            verified_identity: self.verified_identity.clone(),
             shared_refs: self.shared_refs.clone(),
             shared_files: self.shared_files.clone(),
         })
@@ -256,11 +259,23 @@ impl Package {
         self.shared_files = files;
         Ok(())
     }
+    #[cfg(test)]
     pub(crate) fn mark_verified(&mut self) {
         self.verified = true;
+        self.verified_identity = None;
+    }
+    pub(crate) fn mark_verified_identity(&mut self, identity: Vec<u8>) {
+        self.verified = true;
+        self.verified_identity = Some(identity);
     }
     pub(crate) fn is_verified(&self) -> bool {
         self.verified
+    }
+    #[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
+    pub(crate) fn verified_identity(&self) -> Option<&[u8]> {
+        self.verified
+            .then_some(self.verified_identity.as_deref())
+            .flatten()
     }
     /// Read a bounded range from an already verified package without extracting it.
     pub fn asset_chunk(&mut self, path: &str, offset: u64, length: usize) -> Result<Vec<u8>> {

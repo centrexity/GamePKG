@@ -1,6 +1,11 @@
-use crate::{archive::Package, manifest::Manifest, verify::verify_embedded};
+use crate::{
+    archive::Package,
+    manifest::Manifest,
+    verify::{verify_embedded, verify_embedded_checked},
+};
 use anyhow::{bail, Context, Result};
 use std::{
+    collections::BTreeMap,
     fs,
     io::{Read, Write},
     path::{Path, PathBuf},
@@ -384,14 +389,29 @@ fn download_with_timeout(
     }
     bail!("too many download redirects")
 }
+/// Proven identities from one strict verification. They are valid only for
+/// this in-process snapshot; they are never persisted as a trust decision.
+#[derive(Debug, Clone)]
+pub struct VerifiedIdentity {
+    pub tree_identity: String,
+    pub archive_digest: String,
+}
+pub(crate) struct InstalledVerified {
+    pub(crate) manifest: Manifest,
+    pub(crate) identity: VerifiedIdentity,
+    pub(crate) package: Package,
+    pub(crate) snapshot: tempfile::NamedTempFile,
+}
 pub struct LibraryInspection {
     pub games: Vec<Manifest>,
+    pub verified: BTreeMap<String, VerifiedIdentity>,
     pub rejected: Vec<(String, String)>,
 }
 /// Inspect each file independently for display; rejected files never supply game metadata.
 pub fn inspect_library(root: &Path) -> Result<LibraryInspection> {
     let mut report = LibraryInspection {
         games: Vec::new(),
+        verified: BTreeMap::new(),
         rejected: Vec::new(),
     };
     if !root.exists() {
@@ -402,18 +422,26 @@ pub fn inspect_library(root: &Path) -> Result<LibraryInspection> {
         if entry.path().extension().is_none_or(|x| x != "gamepkg") {
             continue;
         }
-        let result = (|| -> Result<Manifest> {
+        let result = (|| -> Result<(Manifest, VerifiedIdentity)> {
             if entry.file_type()?.is_symlink() {
                 bail!("installed package is a symlink");
             }
-            let m = verify_embedded(&mut Package::open(&entry.path())?)?;
-            if entry.file_name().to_str() != Some(&format!("{}.gamepkg", m.id)) {
+            let mut package = Package::open(&entry.path())?;
+            let checked = verify_embedded_checked(&mut package)?;
+            if entry.file_name().to_str() != Some(&format!("{}.gamepkg", checked.manifest.id)) {
                 bail!("installed package ID mismatch");
             }
-            Ok(m)
+            let identity = VerifiedIdentity {
+                tree_identity: hex::encode(checked.tree_identity),
+                archive_digest: package.archive_digest()?,
+            };
+            Ok((checked.manifest, identity))
         })();
         match result {
-            Ok(m) => report.games.push(m),
+            Ok((m, identity)) => {
+                report.verified.insert(m.id.clone(), identity);
+                report.games.push(m);
+            }
             Err(error) => report.rejected.push((
                 entry.file_name().to_string_lossy().into_owned(),
                 format!("{error:#}"),
@@ -427,6 +455,12 @@ pub fn inspect_library(root: &Path) -> Result<LibraryInspection> {
 /// Verify one installed game without letting unrelated damaged files block it.
 pub fn installed_manifest(root: &Path, id: &str) -> Result<Manifest> {
     installed_manifest_with_policy(root, id, true)
+}
+
+/// Authenticate the installed archive for non-admission UI state only. Play
+/// still performs complete source verification through its own launch path.
+pub fn installed_signed_identity(root: &Path, id: &str) -> Result<Manifest> {
+    installed_manifest_with_policy(root, id, false)
 }
 
 fn installed_manifest_with_policy(root: &Path, id: &str, scan_source: bool) -> Result<Manifest> {
@@ -454,6 +488,41 @@ fn installed_manifest_with_policy(root: &Path, id: &str, scan_source: bool) -> R
     }
     Ok(manifest)
 }
+
+/// Strictly verify one installed package on a private snapshot and retain its
+/// proven identities for downstream launch preparation in this process only.
+pub(crate) fn installed_verified(root: &Path, id: &str) -> Result<InstalledVerified> {
+    if !crate::archive::valid_path(id)
+        || id.len() > 200
+        || !id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
+    {
+        bail!("invalid package ID");
+    }
+    let path = root.join(format!("{id}.gamepkg"));
+    let metadata = fs::symlink_metadata(&path).context("package is not installed")?;
+    if !metadata.is_file() || metadata.file_type().is_symlink() {
+        bail!("installed package must be a regular file");
+    }
+    let snapshot = crate::files::snapshot_archive(&path)?;
+    let mut package = Package::open(snapshot.path())?;
+    let checked = verify_embedded_checked(&mut package)?;
+    if checked.manifest.id != id {
+        bail!("installed package ID mismatch");
+    }
+    let identity = VerifiedIdentity {
+        tree_identity: hex::encode(checked.tree_identity),
+        archive_digest: package.archive_digest()?,
+    };
+    Ok(InstalledVerified {
+        manifest: checked.manifest,
+        identity,
+        package,
+        snapshot,
+    })
+}
+
 pub fn list(root: &Path) -> Result<Vec<Manifest>> {
     let report = inspect_library(root)?;
     if let Some((name, error)) = report.rejected.first() {

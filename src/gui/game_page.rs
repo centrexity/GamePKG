@@ -194,33 +194,44 @@ impl App {
             } else {
                 Some(crate::registry::LibraryChange::acquire(&root)?)
             };
-            if !paths.is_empty() {
-                let manifest = crate::registry::installed_manifest(&root, &id)?;
-                anyhow::ensure!(
-                    identity.is_some() && super::rom_identity(&root, &manifest) == identity,
-                    "The game or library changed. Select the ROM files again."
-                );
+            // A plain launch needs no parent-side source scan: the child
+            // performs the authoritative strict verification. Only saved
+            // ROM/network state needs this authenticated manifest here.
+            let manifest = (!paths.is_empty() || network.is_some())
+                .then(|| crate::registry::installed_signed_identity(&root, &id))
+                .transpose()?;
+            if let Some(manifest) = &manifest {
+                if !paths.is_empty() {
+                    anyhow::ensure!(
+                        identity.is_some() && super::rom_identity(&root, manifest) == identity,
+                        "The game or library changed. Select the ROM files again."
+                    );
+                }
             }
-            let manifest = crate::registry::installed_manifest(&root, &id)?;
             let saved_network = if let Some((scope, selection)) = network {
+                let manifest = manifest.as_ref().ok_or_else(|| {
+                    anyhow::anyhow!("The game changed. Review multiplayer settings again.")
+                })?;
                 anyhow::ensure!(
-                    crate::server_selections::identity(&manifest)? == scope,
+                    crate::server_selections::identity(manifest)? == scope,
                     "The game changed. Review multiplayer settings again."
                 );
-                let saved = crate::server_selections::remember(&root, &manifest, &selection)?;
+                let saved = crate::server_selections::remember(&root, manifest, &selection)?;
                 Some((scope, saved))
             } else {
                 None
             };
-            if manifest.requires_rom {
-                crate::rom_selections::save(
-                    &root,
-                    &manifest,
-                    &paths
-                        .iter()
-                        .map(|p| p.to_string_lossy().into_owned())
-                        .collect::<Vec<_>>(),
-                )?;
+            if let Some(manifest) = &manifest {
+                if manifest.requires_rom {
+                    crate::rom_selections::save(
+                        &root,
+                        manifest,
+                        &paths
+                            .iter()
+                            .map(|p| p.to_string_lossy().into_owned())
+                            .collect::<Vec<_>>(),
+                    )?;
+                }
             }
             let mut child = std::process::Command::new(std::env::current_exe()?);
             #[cfg(windows)]

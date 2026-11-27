@@ -11,12 +11,10 @@ fn icon_identity(m: &crate::manifest::Manifest) -> String {
     crate::verify::digest(format!("{}\0{}\0{}", m.id, m.version, m.creator_key).as_bytes())
 }
 fn icon(root: &Path, id: &str) -> Result<Vec<u8>> {
-    crate::registry::installed_manifest(root, id)?;
-    let mut package = crate::archive::Package::open(&root.join(format!("{id}.gamepkg")))?;
-    let manifest = crate::verify::verify_embedded(&mut package)?;
-    if manifest.id != id {
-        bail!("icon package ID differs");
-    }
+    let verified = crate::registry::installed_verified(root, id)?;
+    let mut package = verified.package;
+    let _snapshot = verified.snapshot;
+    let manifest = verified.manifest;
     if package
         .entries
         .get("thumbnail.png")
@@ -39,10 +37,11 @@ fn icon(root: &Path, id: &str) -> Result<Vec<u8>> {
 }
 fn snapshot(root: &Path) -> Result<Vec<u8>> {
     let report = crate::registry::inspect_library(root)?;
+    let verified = report.verified;
     let games=report.games.into_iter().map(|m| {
         let history=crate::progress::load(root,&m.id,&m.creator_key).ok();
         let usage=crate::storage::usage(root,&m).ok();
-        serde_json::json!({"icon_identity":icon_identity(&m),"built":crate::build::is_built(root,&m.id).ok(),"manifest":m,"history":history,"used_bytes":usage.as_ref().map(|u|u.used_bytes()),"on_disk_bytes":usage.as_ref().and_then(|u|u.on_disk_bytes),"storage_label":usage.as_ref().map(|u|u.space().label()),"expected_bytes":usage.as_ref().and_then(|u|u.estimated_bytes),"storage_breakdown":usage.map(|u|u.breakdown())})
+        serde_json::json!({"icon_identity":icon_identity(&m),"built":verified.get(&m.id).and_then(|identity|crate::build::is_built_verified(root,&m,identity).ok()),"manifest":m,"history":history,"used_bytes":usage.as_ref().map(|u|u.used_bytes()),"on_disk_bytes":usage.as_ref().and_then(|u|u.on_disk_bytes),"storage_label":usage.as_ref().map(|u|u.space().label()),"expected_bytes":usage.as_ref().and_then(|u|u.estimated_bytes),"storage_breakdown":usage.map(|u|u.breakdown())})
     }).collect::<Vec<_>>();
     let library_space = crate::storage::space(root).ok();
     let data = serde_json::to_vec(

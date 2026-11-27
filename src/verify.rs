@@ -37,35 +37,46 @@ pub struct Envelope {
     pub public_key: String,
     pub signature: String,
 }
+#[derive(Debug, Clone)]
+pub(crate) struct CheckedPackage {
+    pub(crate) manifest: Manifest,
+    pub(crate) tree_identity: Vec<u8>,
+}
+
 pub fn verify(pkg: &mut Package, trusted: &[u8; 32]) -> Result<Manifest> {
-    let m = authenticate_contents(pkg, trusted)?;
+    Ok(verify_checked(pkg, trusted)?.manifest)
+}
+
+pub(crate) fn verify_checked(pkg: &mut Package, trusted: &[u8; 32]) -> Result<CheckedPackage> {
+    let checked = authenticate_contents(pkg, trusted)?;
     crate::source::scan(pkg)?;
-    if m.builtin_engine.as_deref() == Some(crate::cube2::PROFILE) {
+    if checked.manifest.builtin_engine.as_deref() == Some(crate::cube2::PROFILE) {
         crate::cube2::validate_recipe(pkg)?;
     }
-    if m.builtin_engine.as_deref() == Some(crate::takedawn::PROFILE) {
+    if checked.manifest.builtin_engine.as_deref() == Some(crate::takedawn::PROFILE) {
         crate::takedawn::validate_recipe(pkg)?;
     }
-    if let Some(engine) = m
+    if let Some(engine) = checked
+        .manifest
         .builtin_engine
         .as_deref()
         .and_then(crate::external_engine::get)
     {
         crate::external_engine::validate_recipe(engine, pkg)?;
     }
-    pkg.set_shared_refs(m.shared_assets.clone());
-    pkg.mark_verified();
-    Ok(m)
+    pkg.set_shared_refs(checked.manifest.shared_assets.clone());
+    pkg.mark_verified_identity(checked.tree_identity.clone());
+    Ok(checked)
 }
 
 // Update recovery authenticates the old archive without activating its source.
 // This deliberately does not mark the package verified for asset access or play.
 pub(crate) fn verify_signed_identity(pkg: &mut Package) -> Result<Manifest> {
     let m = Manifest::parse(&pkg.read("manifest.toml")?)?;
-    authenticate_contents(pkg, &decode_key(&m.creator_key)?)
+    Ok(authenticate_contents(pkg, &decode_key(&m.creator_key)?)?.manifest)
 }
 
-fn authenticate_contents(pkg: &mut Package, trusted: &[u8; 32]) -> Result<Manifest> {
+fn authenticate_contents(pkg: &mut Package, trusted: &[u8; 32]) -> Result<CheckedPackage> {
     let m = Manifest::parse(&pkg.read("manifest.toml")?)?;
     for name in [
         "thumbnail.png",
@@ -125,8 +136,9 @@ fn authenticate_contents(pkg: &mut Package, trusted: &[u8; 32]) -> Result<Manife
         bail!("signer is not trusted");
     }
     let sig = Signature::from_slice(&hex::decode(env.signature)?)?;
+    let tree_identity = tree_hash(pkg)?;
     VerifyingKey::from_bytes(trusted)?
-        .verify_strict(&tree_hash(pkg)?, &sig)
+        .verify_strict(&tree_identity, &sig)
         .context("invalid package signature")?;
     for name in ["preview.av1.webm", "preview.ogv"] {
         if pkg.entries.contains_key(name) {
@@ -138,7 +150,10 @@ fn authenticate_contents(pkg: &mut Package, trusted: &[u8; 32]) -> Result<Manife
             bail!("shared asset also embedded in archive");
         }
     }
-    Ok(m)
+    Ok(CheckedPackage {
+        manifest: m,
+        tree_identity,
+    })
 }
 
 pub fn decode_key(s: &str) -> Result<[u8; 32]> {
@@ -149,4 +164,9 @@ pub fn decode_key(s: &str) -> Result<[u8; 32]> {
 pub fn verify_embedded(pkg: &mut Package) -> Result<Manifest> {
     let m = Manifest::parse(&pkg.read("manifest.toml")?)?;
     verify(pkg, &decode_key(&m.creator_key)?)
+}
+
+pub(crate) fn verify_embedded_checked(pkg: &mut Package) -> Result<CheckedPackage> {
+    let m = Manifest::parse(&pkg.read("manifest.toml")?)?;
+    verify_checked(pkg, &decode_key(&m.creator_key)?)
 }

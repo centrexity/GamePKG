@@ -198,8 +198,13 @@ impl VerifiedAssets {
         package: &mut crate::archive::Package,
         source_identity: &str,
     ) -> Result<Option<Self>> {
-        crate::verify::verify_embedded(package)?;
-        let identity = hex::encode(crate::verify::tree_hash(package)?);
+        // The caller obtained this package from complete strict verification;
+        // re-use that proven identity instead of scanning identical source again.
+        let identity = hex::encode(
+            package
+                .verified_identity()
+                .context("asset staging requires a package verified with its tree identity")?,
+        );
         ensure!(
             identity == source_identity,
             "assets differ from the audited source kit"
@@ -221,11 +226,13 @@ impl VerifiedAssets {
         std::fs::create_dir(&assets)?;
         if recorded_audio {
             let archive_path = directory.path().join("audio.gamepkg");
+            let expected = package.archive_digest()?;
             package.copy_verified_archive(File::create(&archive_path)?)?;
-            let mut frozen = crate::archive::Package::open(&archive_path)?;
-            crate::verify::verify_embedded(&mut frozen)?;
+            // The frozen archive is a byte-for-byte copy of the package that
+            // was strictly verified above; compare bytes instead of scanning
+            // the same source a second time on the launch path.
             ensure!(
-                hex::encode(crate::verify::tree_hash(&mut frozen)?) == identity,
+                crate::files::hash_archive(&archive_path)? == expected,
                 "recorded audio differs from the audited source kit"
             );
         }

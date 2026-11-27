@@ -17,11 +17,12 @@ pub struct CheckedSources {
 }
 impl CheckedSources {
     pub fn verify(package: &mut crate::archive::Package) -> Result<Self> {
-        let manifest = crate::verify::verify_embedded(package)?;
+        // This single call performs signature, dependency and complete source
+        // admission, then returns the tree identity it already authenticated.
+        let checked = crate::verify::verify_embedded_checked(package)?;
+        let manifest = checked.manifest;
         crate::build_policy::require(manifest.builtin_engine.as_deref())?;
-        // Deliberately explicit even if the verifier also invokes the scanner.
-        crate::source::scan(package)?;
-        let identity = hex::encode(crate::verify::tree_hash(package)?);
+        let identity = hex::encode(checked.tree_identity);
         let mut files = Vec::new();
         for name in package
             .entries

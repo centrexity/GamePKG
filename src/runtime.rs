@@ -884,12 +884,12 @@ impl Game {
         native: Option<bool>,
         configured: Option<&crate::settings::Settings>,
     ) -> Result<Self> {
-        crate::registry::installed_manifest(root, id)?;
         let _build_read = crate::build::BuildChange::read(root, id)?;
-        let snapshot = crate::files::snapshot_archive(&root.join(format!("{id}.gamepkg")))?;
-        let mut package = crate::archive::Package::open(snapshot.path())?;
-        let package_digest = package.archive_digest()?;
-        let manifest = crate::verify::verify_embedded(&mut package)?;
+        let verified = crate::registry::installed_verified(root, id)?;
+        let mut package = verified.package;
+        let _snapshot = verified.snapshot;
+        let package_digest = verified.identity.archive_digest;
+        let manifest = verified.manifest;
         crate::build_policy::require(manifest.builtin_engine.as_deref())?;
         anyhow::ensure!(
             !manifest.uses_service_runtime(),

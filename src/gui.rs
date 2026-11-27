@@ -269,7 +269,7 @@ impl App {
         if let Some(id) = play {
             app.begin_work(move || {
                 let root = crate::registry::default_root()?;
-                let manifest = crate::registry::installed_manifest(&root, &id)?;
+                let manifest = crate::registry::installed_signed_identity(&root, &id)?;
                 let paths = crate::rom_selections::load(&root, &manifest)?
                     .into_iter()
                     .map(PathBuf::from)
@@ -366,6 +366,7 @@ impl App {
     ) {
         self.rejected = report.rejected;
         let games = report.games;
+        let verified = report.verified;
         let scopes: HashSet<String> = games.iter().filter_map(multiplayer::scope).collect();
         self.network_drafts.retain(|key, _| scopes.contains(key));
         let video_scopes: HashSet<String> = games
@@ -431,11 +432,13 @@ impl App {
                     }
                 }
             }
-            if crate::build::is_built(&root, &m.id).unwrap_or(false) {
-                self.wasm_built.insert(m.id.clone());
-            }
-            if crate::native::is_built(&root, &m.id).unwrap_or(false) {
-                self.built.insert(m.id.clone());
+            if let Some(identity) = verified.get(&m.id) {
+                if crate::build::is_built_verified(&root, m, identity).unwrap_or(false) {
+                    self.wasm_built.insert(m.id.clone());
+                }
+                if crate::native::is_built_verified(&root, m, identity).unwrap_or(false) {
+                    self.built.insert(m.id.clone());
+                }
             }
             let decoded = (|| -> anyhow::Result<_> {
                 let mut pkg =
@@ -1906,6 +1909,7 @@ mod async_library_tests {
                 catalog: Ok(Vec::new()),
                 inspection: Ok(LibraryInspection {
                     games: vec![report_manifest.clone()],
+                    verified: std::collections::BTreeMap::new(),
                     rejected: vec![("broken.gamepkg".into(), "signature mismatch".into())],
                 }),
             }

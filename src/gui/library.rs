@@ -115,6 +115,7 @@ mod tests {
                 catalog: Ok(Vec::new()),
                 inspection: Ok(LibraryInspection {
                     games: Vec::new(),
+                    verified: std::collections::BTreeMap::new(),
                     rejected: Vec::new(),
                 }),
             }

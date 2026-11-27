@@ -7,6 +7,7 @@ use crate::port_host::{
     preparation::{self, Artifact, Bootstrap, ExecutableReceipt, LocalLayout, Plan, Target},
     process::{NativeLaunch, Process},
 };
+use crate::registry::VerifiedIdentity;
 use anyhow::{ensure, Context, Result};
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier};
 use std::{
@@ -59,12 +60,6 @@ fn key(root: &Path, create: bool) -> Result<SigningKey> {
     Ok(SigningKey::from_bytes(
         &bytes.try_into().ok().context("invalid native cache key")?,
     ))
-}
-
-#[cfg(target_os = "linux")]
-fn open(root: &Path, id: &str) -> Result<crate::archive::Package> {
-    crate::registry::installed_manifest(root, id)?;
-    crate::archive::Package::open(&root.join(format!("{id}.gamepkg")))
 }
 
 fn prepare_graphics(
@@ -125,8 +120,13 @@ fn source_snapshot(
 
 pub(super) fn build(root: &Path, id: &str) -> Result<()> {
     let _lock = crate::build::BuildChange::acquire(root, id)?;
-    let path = super::cache_path(root, id)?;
     let (sources, package, _snapshot) = source_snapshot(root, id)?;
+    let archive_digest = package.archive_digest()?;
+    let identity = VerifiedIdentity {
+        tree_identity: sources.identity().to_owned(),
+        archive_digest: archive_digest.clone(),
+    };
+    let path = super::cache_path_for_identity(root, &identity, sources.manifest());
     let plan = plan(sources.manifest())?;
     let pipelines = if sources.manifest().native_graphics.is_some() {
         prepare_graphics(root, &sources, &package, &crate::settings::load()?)?
@@ -135,7 +135,7 @@ pub(super) fn build(root: &Path, id: &str) -> Result<()> {
     };
     let artifact = preparation::build_in_process(root, &sources, &plan, pipelines)?;
     ensure!(
-        super::cache_path(root, id)? == path,
+        crate::files::hash_archive(&root.join(format!("{id}.gamepkg")))? == archive_digest,
         "installed game changed during the build"
     );
     let receipt = serde_json::to_vec(artifact.receipt())?;
@@ -159,12 +159,13 @@ fn write(path: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
-fn prepared(
+fn verified_executable(
     root: &Path,
-    id: &str,
+    manifest: &Manifest,
+    identity: &VerifiedIdentity,
     settings: Option<&crate::settings::Settings>,
-) -> Result<(CheckedSources, ExecutableReceipt, Vec<u8>)> {
-    let path = super::cache_path(root, id)?;
+) -> Result<(ExecutableReceipt, Vec<u8>)> {
+    let path = super::cache_path_for_identity(root, identity, manifest);
     let auth = crate::files::read_regular(&path.with_extension("receipt"), 2 * 1024 * 1024, false)
         .context("Build this game before playing")?;
     let (signature, json) = auth
@@ -174,9 +175,7 @@ fn prepared(
         .verifying_key()
         .verify(json, &Signature::from_slice(signature)?)?;
     let receipt: ExecutableReceipt = serde_json::from_slice(json)?;
-
-    let (sources, package, _snapshot) = source_snapshot(root, id)?;
-    let shader_preparation = if sources.manifest().native_graphics.is_some() {
+    let shader_preparation = if manifest.native_graphics.is_some() {
         let loaded;
         let settings = match settings {
             Some(settings) => settings,
@@ -187,17 +186,17 @@ fn prepared(
         };
         vec![crate::shaders::native_preparation_identity(
             root,
-            &package.archive_digest()?,
+            &identity.archive_digest,
             settings,
         )?]
     } else {
         Vec::new()
     };
     ensure!(
-        receipt.game.source_kit == sources.identity()
+        receipt.game.source_kit == identity.tree_identity
             && receipt.game.sdk == crate::port_host::build_identity()
             && receipt.game.policy == crate::build_policy::REVISION
-            && receipt.plan == plan(sources.manifest())?
+            && receipt.plan == plan(manifest)?
             && receipt.bootstrap == Bootstrap::InProcess
             && receipt.game.shaders.len() == shader_preparation.len()
             && receipt.shader_preparation == shader_preparation,
@@ -208,11 +207,35 @@ fn prepared(
         crate::verify::digest(&bytes) == receipt.binary,
         "native executable changed"
     );
-    Ok((sources, receipt, bytes))
+    Ok((receipt, bytes))
 }
 
-pub(super) fn ready(root: &Path, id: &str) -> bool {
-    prepared(root, id, None).is_ok()
+fn prepared(
+    root: &Path,
+    id: &str,
+    settings: Option<&crate::settings::Settings>,
+) -> Result<(
+    CheckedSources,
+    crate::archive::Package,
+    tempfile::NamedTempFile,
+    ExecutableReceipt,
+    Vec<u8>,
+)> {
+    let (sources, package, snapshot) = source_snapshot(root, id)?;
+    let identity = VerifiedIdentity {
+        tree_identity: sources.identity().to_owned(),
+        archive_digest: package.archive_digest()?,
+    };
+    let (receipt, bytes) = verified_executable(root, sources.manifest(), &identity, settings)?;
+    Ok((sources, package, snapshot, receipt, bytes))
+}
+
+pub(super) fn ready_verified(
+    root: &Path,
+    manifest: &Manifest,
+    identity: &VerifiedIdentity,
+) -> bool {
+    verified_executable(root, manifest, identity, None).is_ok()
 }
 
 pub(super) fn play_entry(
@@ -225,8 +248,12 @@ pub(super) fn play_entry(
 ) -> Result<()> {
     settings.validate()?;
     let build_lock = crate::build::BuildChange::read(root, id)?;
-    let (sources, receipt, bytes) = prepared(root, id, Some(settings))?;
+    #[cfg(target_os = "linux")]
+    let (sources, mut package, _snapshot, receipt, bytes) = prepared(root, id, Some(settings))?;
+    #[cfg(not(target_os = "linux"))]
+    let (sources, _package, _snapshot, receipt, bytes) = prepared(root, id, Some(settings))?;
     let manifest = sources.manifest();
+    super::require_compatibility(manifest)?;
     ensure!(
         manifest.limits.hard_memory_bytes <= settings.memory_ceiling_mib * 1048576,
         "increase the memory ceiling in Settings to at least {} MiB for this game",
@@ -243,7 +270,7 @@ pub(super) fn play_entry(
     #[cfg(target_os = "linux")]
     let mut process = {
         let assets = if manifest.native_tick {
-            VerifiedAssets::stage(&mut open(root, id)?, sources.identity())?
+            VerifiedAssets::stage(&mut package, sources.identity())?
         } else {
             None
         };

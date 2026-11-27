@@ -89,7 +89,7 @@ fn main() -> eframe::Result {
     let window_preferences = args.play.as_ref().and_then(|id| {
         let open = || -> anyhow::Result<gamepkg::window_preferences::Session> {
             let root = gamepkg::registry::default_root()?;
-            let manifest = gamepkg::registry::installed_manifest(&root, id)?;
+            let manifest = gamepkg::registry::installed_signed_identity(&root, id)?;
             gamepkg::window_preferences::Session::open(&root, &manifest.id, &manifest.creator_key)
         };
         match open() {

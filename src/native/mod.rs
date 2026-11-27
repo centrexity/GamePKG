@@ -236,8 +236,9 @@ pub fn play_services(
     settings: &crate::settings::Settings,
     graphics: crate::launch_options::LaunchArgs,
 ) -> Result<()> {
-    let manifest = crate::registry::installed_manifest(root, id)?;
-    require_compatibility(&manifest)?;
+    // Authentication of the manifest is enough for this policy gate; the
+    // child's strict verification happens once inside play_entry.
+    require_compatibility(&crate::registry::installed_signed_identity(root, id)?)?;
     #[cfg(all(
         feature = "gui",
         any(
@@ -259,11 +260,13 @@ pub fn play_services(
     }
 }
 
-pub fn cache_path(root: &Path, id: &str) -> Result<PathBuf> {
-    let manifest = crate::registry::installed_manifest(root, id)?;
-    let package_digest = crate::files::hash_archive(&root.join(format!("{id}.gamepkg")))?;
-    let path = path_for_digest(root, &package_digest);
-    Ok(if manifest.native_tick || manifest.uses_service_runtime() {
+fn cache_path_for_identity(
+    root: &Path,
+    identity: &crate::registry::VerifiedIdentity,
+    manifest: &crate::manifest::Manifest,
+) -> PathBuf {
+    let path = path_for_digest(root, &identity.archive_digest);
+    if manifest.native_tick || manifest.uses_service_runtime() {
         path.with_file_name(if cfg!(windows) {
             "compatibility-game.exe"
         } else {
@@ -271,11 +274,22 @@ pub fn cache_path(root: &Path, id: &str) -> Result<PathBuf> {
         })
     } else {
         path
-    })
+    }
 }
-pub fn is_built(root: &Path, id: &str) -> Result<bool> {
-    let manifest = crate::registry::installed_manifest(root, id)?;
-    if !build_supported(&manifest) {
+pub fn cache_path(root: &Path, id: &str) -> Result<PathBuf> {
+    let verified = crate::registry::installed_verified(root, id)?;
+    Ok(cache_path_for_identity(
+        root,
+        &verified.identity,
+        &verified.manifest,
+    ))
+}
+pub(crate) fn is_built_verified(
+    root: &Path,
+    manifest: &crate::manifest::Manifest,
+    identity: &crate::registry::VerifiedIdentity,
+) -> Result<bool> {
+    if !build_supported(manifest) {
         return Ok(false);
     }
     #[cfg(all(
@@ -285,7 +299,7 @@ pub fn is_built(root: &Path, id: &str) -> Result<bool> {
             all(target_os = "linux", target_arch = "x86_64")
         )
     ))]
-    return Ok(tick::ready(root, id));
+    return Ok(tick::ready_verified(root, manifest, identity));
     #[cfg(not(all(
         feature = "gui",
         any(
@@ -293,7 +307,14 @@ pub fn is_built(root: &Path, id: &str) -> Result<bool> {
             all(target_os = "linux", target_arch = "x86_64")
         )
     )))]
-    Ok(false)
+    {
+        let _ = (root, identity);
+        Ok(false)
+    }
+}
+pub fn is_built(root: &Path, id: &str) -> Result<bool> {
+    let verified = crate::registry::installed_verified(root, id)?;
+    is_built_verified(root, &verified.manifest, &verified.identity)
 }
 pub fn build_supported(manifest: &crate::manifest::Manifest) -> bool {
     require_compatibility(manifest).is_ok()
