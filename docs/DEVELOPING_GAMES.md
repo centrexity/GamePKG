@@ -99,7 +99,7 @@ does not resize the window. Dimensions outside the 16-bit wire representation
 are unavailable, not clamped. Generated native/core/component bindings require
 the updated host; hosts older than 0.1.29 lack this call.
 
-Published 0.1.30 desktop hosts also provide:
+Published 0.1.31 desktop hosts also provide:
 
 - `window_vsync_preference()` reads the committed `Option<bool>` presentation
   preference for the next game-window launch. It requires signed input and a

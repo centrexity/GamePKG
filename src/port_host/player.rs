@@ -641,6 +641,14 @@ impl App {
         }
     }
 }
+
+/// Service wakes are not game frames. Only poll-driven legacy games need a
+/// redraw for every wake; service-runtime games paint when a frame is pending.
+fn wake_requests_redraw(manifest: &Manifest, pending_frame: bool) -> bool {
+    let poll_redraw = !manifest.native_tick && !manifest.uses_service_runtime();
+    poll_redraw || pending_frame
+}
+
 impl ApplicationHandler<()> for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.running.is_none() {
@@ -660,9 +668,8 @@ impl ApplicationHandler<()> for App {
             return;
         }
         if let Some(running) = self.running.as_mut() {
-            if !self.launch.manifest().native_tick
-                || running.driver.host().backend().desktop.has_pending_frame()
-            {
+            let pending_frame = running.driver.host().backend().desktop.has_pending_frame();
+            if wake_requests_redraw(self.launch.manifest(), pending_frame) {
                 running.window.request_redraw();
             }
         }
@@ -818,5 +825,47 @@ fn run_window(
         Err(error)
     } else {
         Ok(app.report)
+    }
+}
+
+#[cfg(test)]
+mod wake_redraw_tests {
+    use super::wake_requests_redraw;
+    use crate::manifest::Manifest;
+
+    fn manifest(prefix: &str) -> Manifest {
+        let base = include_str!("../../examples/minimal/manifest.toml");
+        Manifest::parse(format!("{prefix}{base}").as_bytes()).unwrap()
+    }
+
+    #[test]
+    fn service_wakes_without_a_pending_frame_do_not_request_redraw() {
+        let manifest = manifest("native_services = true\n");
+        assert!(manifest.uses_service_runtime());
+        assert!(!manifest.native_tick);
+        for _ in 0..8 {
+            assert!(!wake_requests_redraw(&manifest, false));
+        }
+    }
+
+    #[test]
+    fn one_service_wake_with_a_pending_frame_requests_one_redraw() {
+        let manifest = manifest("native_services = true\n");
+        assert!(wake_requests_redraw(&manifest, true));
+    }
+
+    #[test]
+    fn legacy_poll_driven_wakes_keep_requesting_redraws() {
+        let legacy = manifest("");
+        assert!(!legacy.uses_service_runtime());
+        assert!(!legacy.native_tick);
+        for _ in 0..8 {
+            assert!(wake_requests_redraw(&legacy, false));
+            assert!(wake_requests_redraw(&legacy, true));
+        }
+        let tick = manifest("native_tick = true\n");
+        assert!(tick.native_tick);
+        assert!(!wake_requests_redraw(&tick, false));
+        assert!(wake_requests_redraw(&tick, true));
     }
 }
