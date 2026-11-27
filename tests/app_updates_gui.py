@@ -49,9 +49,9 @@ print('200',end='')
     try:
         window,_=game_window(env,'GamePKG')
         # Default-on startup check announces the newer release without a manual check.
-        click_text(window,env,'Review app update',root,max_y=800)
+        click_text(window,env,'Review app update',root,max_y=900)
         time.sleep(.5)
-        click_text(window,env,'Check for app updates when GamePKG opens',root,max_y=650)
+        click_text(window,env,'Check for app updates when GamePKG opens',root,max_y=900)
         # The help text also says 'Save settings'. Locate the actual action
         # row using its adjacent Cancel button, rather than clicking that label.
         _,save_y=click_text(window,env,'Cancel edits',root,click=False)
@@ -77,9 +77,9 @@ print('200',end='')
         assert (root/'requests').read_text()==requests, 'Disabled startup check made a network request'
         click_text(window,env,'Settings',root,max_y=60)
         time.sleep(.5)
-        click_text(window,env,'Check for GamePKG updates',root,max_y=650)
+        click_text(window,env,'Check for GamePKG updates',root,max_y=900)
         time.sleep(1)
-        click_text(window,env,'Download and install GamePKG update',root,max_y=650)
+        click_text(window,env,'Download and install GamePKG update',root,max_y=900)
         choose_native_file(env,'Choose where to install the new GamePKG version',destination)
         # Xvfb has no window manager to restore the app's input focus.
         subprocess.run(['xdotool','windowfocus',window,'mousemove','--window',window,'500','100','click','1'],env=env,check=True)
@@ -88,12 +88,12 @@ print('200',end='')
         assert not (destination/package).exists(), 'Damaged download created an installation'
         assert not list(destination.iterdir()), 'Failed update left staging files'
         checksum.write_text(digest+'  '+name+'\n')
-        click_text(window,env,'Download and install GamePKG update',root,max_y=650)
+        click_text(window,env,'Download and install GamePKG update',root,max_y=900)
         choose_native_file(env,'Choose where to install the new GamePKG version',destination)
         # Xvfb has no window manager to restore the app's input focus.
         subprocess.run(['xdotool','windowfocus',window,'mousemove','--window',window,'500','100','click','1'],env=env,check=True)
         time.sleep(1)
-        click_text(window,env,'Restart into updated GamePKG',root,max_y=650)
+        click_text(window,env,'Restart into updated GamePKG',root,max_y=900)
         app.wait(timeout=15)
         for _ in range(50):
             if marker.exists(): break

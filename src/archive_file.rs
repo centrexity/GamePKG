@@ -1,4 +1,4 @@
-//! Independent logical cursors over one already-open package file.
+//! Independent logical cursors over one already-open package snapshot.
 //! Cloning never reopens a path or shares an unprotected seek position.
 use std::{
     fs::File,
@@ -6,23 +6,37 @@ use std::{
     sync::{Arc, Mutex},
 };
 #[derive(Clone, Debug)]
+enum Backing {
+    File(Arc<Mutex<File>>),
+    Bytes(Arc<Vec<u8>>),
+}
+#[derive(Clone, Debug)]
 pub(super) struct CursorFile {
-    file: Arc<Mutex<File>>,
+    backing: Backing,
     position: u64,
 }
 impl CursorFile {
     pub(super) fn new(file: File) -> Self {
         Self {
-            file: Arc::new(Mutex::new(file)),
+            backing: Backing::File(Arc::new(Mutex::new(file))),
+            position: 0,
+        }
+    }
+    pub(super) fn from_bytes(bytes: Vec<u8>) -> Self {
+        Self {
+            backing: Backing::Bytes(Arc::new(bytes)),
             position: 0,
         }
     }
     pub(super) fn length(&self) -> io::Result<u64> {
-        self.file
-            .lock()
-            .map_err(|_| io::Error::other("package file unavailable"))?
-            .metadata()
-            .map(|metadata| metadata.len())
+        match &self.backing {
+            Backing::File(file) => file
+                .lock()
+                .map_err(|_| io::Error::other("package file unavailable"))?
+                .metadata()
+                .map(|metadata| metadata.len()),
+            Backing::Bytes(bytes) => Ok(bytes.len() as u64),
+        }
     }
 }
 impl Read for CursorFile {
@@ -31,13 +45,23 @@ impl Read for CursorFile {
             return Ok(0);
         }
         let limit = output.len().min(65536);
-        let count = {
-            let mut file = self
-                .file
-                .lock()
-                .map_err(|_| io::Error::other("package file unavailable"))?;
-            file.seek(SeekFrom::Start(self.position))?;
-            file.read(&mut output[..limit])?
+        let count = match &self.backing {
+            Backing::File(file) => {
+                let mut file = file
+                    .lock()
+                    .map_err(|_| io::Error::other("package file unavailable"))?;
+                file.seek(SeekFrom::Start(self.position))?;
+                file.read(&mut output[..limit])?
+            }
+            Backing::Bytes(bytes) => {
+                let start = usize::try_from(self.position).map_err(|_| {
+                    io::Error::new(io::ErrorKind::InvalidInput, "package position overflow")
+                })?;
+                let available = bytes.len().saturating_sub(start);
+                let count = limit.min(available);
+                output[..count].copy_from_slice(&bytes[start..start + count]);
+                count
+            }
         };
         self.position = self.position.checked_add(count as u64).ok_or_else(|| {
             io::Error::new(io::ErrorKind::InvalidInput, "package position overflow")

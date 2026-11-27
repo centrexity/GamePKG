@@ -100,22 +100,28 @@ fn prepare_graphics(
     VerifiedPipelines::prepare(root, sources, package, settings, vec![recipe], 1).map(Some)
 }
 
-fn source_snapshot(
-    root: &Path,
-    id: &str,
-) -> Result<(
+type SourceSnapshot = (
     CheckedSources,
     crate::archive::Package,
-    tempfile::NamedTempFile,
-)> {
-    let snapshot = crate::files::snapshot_archive(&root.join(format!("{id}.gamepkg")))?;
-    let mut package = crate::archive::Package::open(snapshot.path())?;
+    Option<tempfile::NamedTempFile>,
+);
+type PreparedSources = (
+    CheckedSources,
+    crate::archive::Package,
+    Option<tempfile::NamedTempFile>,
+    ExecutableReceipt,
+    Vec<u8>,
+);
+
+fn source_snapshot(root: &Path, id: &str) -> Result<SourceSnapshot> {
+    let (bytes, digest) = crate::files::archive_snapshot(&root.join(format!("{id}.gamepkg")))?;
+    let mut package = crate::archive::Package::open_snapshot(bytes, digest)?;
     let sources = CheckedSources::verify(&mut package)?;
     ensure!(
         sources.manifest().id == id,
         "installed native package ID changed"
     );
-    Ok((sources, package, snapshot))
+    Ok((sources, package, None))
 }
 
 pub(super) fn build(root: &Path, id: &str) -> Result<()> {
@@ -214,13 +220,7 @@ fn prepared(
     root: &Path,
     id: &str,
     settings: Option<&crate::settings::Settings>,
-) -> Result<(
-    CheckedSources,
-    crate::archive::Package,
-    tempfile::NamedTempFile,
-    ExecutableReceipt,
-    Vec<u8>,
-)> {
+) -> Result<PreparedSources> {
     let (sources, package, snapshot) = source_snapshot(root, id)?;
     let identity = VerifiedIdentity {
         tree_identity: sources.identity().to_owned(),

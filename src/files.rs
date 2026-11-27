@@ -63,6 +63,15 @@ pub(crate) fn snapshot_archive(path: &Path) -> Result<tempfile::NamedTempFile> {
     Ok(snapshot)
 }
 
+/// Read one regular package into an immutable snapshot and hash those exact bytes.
+/// The digest identifies this snapshot only; no filename, timestamp or version is trusted.
+pub(crate) fn archive_snapshot(path: &Path) -> Result<(Vec<u8>, String)> {
+    const MAX_ARCHIVE_BYTES: u64 = 1024 * 1024 * 1024;
+    let bytes = read_regular(path, MAX_ARCHIVE_BYTES, false)?;
+    let digest = crate::verify::digest(&bytes);
+    Ok((bytes, digest))
+}
+
 /// A selected disc stays open read-only; reads are bounded independently of its size.
 #[cfg(all(
     feature = "gui",

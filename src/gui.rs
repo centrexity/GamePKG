@@ -86,6 +86,9 @@ pub struct App {
     app_update_notice: bool,
     app_update_error: Option<String>,
     registration: crate::registration::State,
+    registration_code_open: bool,
+    registration_code: String,
+    registration_code_status: Option<String>,
     show_support: bool,
     support_copied: Option<String>,
     brand_icon: Option<egui::TextureHandle>,
@@ -1522,22 +1525,82 @@ impl eframe::App for App {
                 }
             });
             if let Some(text) = self.registration.banner(std::time::SystemTime::now()) {
-                let (rect, _) = ui.allocate_exact_size(
-                    egui::vec2(ui.available_width(), 24.0),
-                    egui::Sense::hover(),
-                );
-                ui.painter()
-                    .rect_filled(rect, 0.0, egui::Color32::from_rgb(0x5a, 0x3d, 0x00));
-                ui.painter().text(
-                    rect.left_center() + egui::vec2(10.0, 0.0),
-                    egui::Align2::LEFT_CENTER,
-                    text,
-                    egui::FontId::proportional(12.0),
-                    egui::Color32::from_rgb(0xff, 0xe0, 0x9a),
-                );
+                egui::Frame::NONE
+                    .fill(egui::Color32::from_rgb(0x5a, 0x3d, 0x00))
+                    .inner_margin(egui::Margin::symmetric(14, 10))
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.vertical(|ui| {
+                                ui.label(
+                                    egui::RichText::new(text)
+                                        .size(17.0)
+                                        .strong()
+                                        .color(egui::Color32::from_rgb(0xff, 0xe0, 0x9a)),
+                                );
+                                ui.label(
+                                    egui::RichText::new(
+                                        "Registration is optional. Trial play is never blocked.",
+                                    )
+                                    .size(12.0)
+                                    .color(egui::Color32::from_rgb(0xe6, 0xc9, 0x8c)),
+                                );
+                            });
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    if ui.button("Enter registration code").clicked() {
+                                        self.registration_code_open = true;
+                                        self.registration_code_status = None;
+                                    }
+                                    if ui.add(theme::primary("Register")).clicked() {
+                                        let url =
+                                            crate::support::details().registration_url.clone();
+                                        ctx.open_url(egui::OpenUrl::new_tab(url));
+                                    }
+                                },
+                            );
+                        });
+                    });
             }
             ui.add_space(8.0);
         });
+        if self.registration_code_open {
+            egui::Window::new("Enter registration code")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+                .show(ctx, |ui| {
+                    ui.label("Paste the registration code issued with your purchase.");
+                    let response = ui.text_edit_singleline(&mut self.registration_code);
+                    if response.lost_focus()
+                        && ui.input(|input| input.key_pressed(egui::Key::Enter))
+                    {
+                        self.registration_code_status = Some(
+                            "No code accepted. No registration service is configured yet."
+                                .to_owned(),
+                        );
+                    }
+                    if let Some(status) = &self.registration_code_status {
+                        ui.label(
+                            egui::RichText::new(status)
+                                .color(egui::Color32::from_rgb(0xff, 0x9a, 0x8c)),
+                        );
+                    }
+                    ui.horizontal(|ui| {
+                        if ui.button("Continue").clicked() {
+                            self.registration_code_status = Some(
+                                "No code accepted. No registration service is configured yet."
+                                    .to_owned(),
+                            );
+                        }
+                        if ui.button("Cancel").clicked() {
+                            self.registration_code_open = false;
+                            self.registration_code.clear();
+                            self.registration_code_status = None;
+                        }
+                    });
+                });
+        }
         if self.show_support {
             if self.brand_icon.is_none() {
                 let icon = window_icon();

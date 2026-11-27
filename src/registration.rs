@@ -1,8 +1,10 @@
-//! Persistent first-run timestamp for the unregistered trial banner.
+//! Persistent first-run timestamp and unregistered trial banner.
 //!
-//! The banner is display-only: there is no registration or payment flow yet.
-//! Registration state is kept separate from user-editable settings so a normal
-//! Settings save cannot restart the 30-day countdown.
+//! Trial play is never blocked. The banner offers the project's registration
+//! link and a code-entry dialog, but no redemption service is configured yet,
+//! so entered codes are never accepted or persisted. Registration state is kept
+//! separate from user-editable settings so a normal Settings save cannot
+//! restart the 30-day countdown.
 
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};

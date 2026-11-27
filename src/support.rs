@@ -8,6 +8,7 @@ pub struct Details {
     pub bitcoin: String,
     pub monero: String,
     pub dogecoin: String,
+    pub registration_url: String,
     pub mining_url: String,
 }
 

@@ -400,7 +400,7 @@ pub(crate) struct InstalledVerified {
     pub(crate) manifest: Manifest,
     pub(crate) identity: VerifiedIdentity,
     pub(crate) package: Package,
-    pub(crate) snapshot: tempfile::NamedTempFile,
+    pub(crate) snapshot: Option<tempfile::NamedTempFile>,
 }
 pub struct LibraryInspection {
     pub games: Vec<Manifest>,
@@ -505,8 +505,8 @@ pub(crate) fn installed_verified(root: &Path, id: &str) -> Result<InstalledVerif
     if !metadata.is_file() || metadata.file_type().is_symlink() {
         bail!("installed package must be a regular file");
     }
-    let snapshot = crate::files::snapshot_archive(&path)?;
-    let mut package = Package::open(snapshot.path())?;
+    let (bytes, digest) = crate::files::archive_snapshot(&path)?;
+    let mut package = Package::open_snapshot(bytes, digest)?;
     let checked = verify_embedded_checked(&mut package)?;
     if checked.manifest.id != id {
         bail!("installed package ID mismatch");
@@ -519,7 +519,7 @@ pub(crate) fn installed_verified(root: &Path, id: &str) -> Result<InstalledVerif
         manifest: checked.manifest,
         identity,
         package,
-        snapshot,
+        snapshot: None,
     })
 }
 

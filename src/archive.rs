@@ -94,10 +94,18 @@ pub struct Package {
     verified_identity: Option<Vec<u8>>,
     shared_refs: BTreeMap<String, crate::pool::Reference>,
     shared_files: BTreeMap<String, SharedSnapshot>,
+    digest: Option<String>,
 }
 impl Package {
     pub fn open(path: &Path) -> Result<Self> {
         let raw_file = CursorFile::new(crate::files::open_regular(path, u64::MAX, true)?);
+        Self::from_cursor(raw_file, None)
+    }
+    /// Open one immutable in-memory snapshot whose bytes were hashed while read.
+    pub(crate) fn open_snapshot(bytes: Vec<u8>, digest: String) -> Result<Self> {
+        Self::from_cursor(CursorFile::from_bytes(bytes), Some(digest))
+    }
+    fn from_cursor(raw_file: CursorFile, digest: Option<String>) -> Result<Self> {
         let mut archive = ZipArchive::new(raw_file.clone())?;
         // zip's name index collapses duplicates. Count raw central records before
         // using that index, so duplicate names cannot disappear during parsing.
@@ -169,6 +177,7 @@ impl Package {
             verified_identity: None,
             shared_refs: BTreeMap::new(),
             shared_files: BTreeMap::new(),
+            digest,
         })
     }
     pub fn read(&mut self, path: &str) -> Result<Vec<u8>> {
@@ -205,6 +214,9 @@ impl Package {
     }
 
     pub(crate) fn archive_digest(&self) -> Result<String> {
+        if let Some(digest) = &self.digest {
+            return Ok(digest.clone());
+        }
         crate::verify::digest_reader(self.raw.clone())
     }
 
@@ -228,6 +240,7 @@ impl Package {
             verified_identity: self.verified_identity.clone(),
             shared_refs: self.shared_refs.clone(),
             shared_files: self.shared_files.clone(),
+            digest: self.digest.clone(),
         })
     }
     pub fn has_shared_assets(&self) -> bool {
@@ -413,6 +426,28 @@ mod tests {
     use super::*;
     use std::fs::File;
     use std::io::Write;
+    #[test]
+    fn in_memory_snapshot_keeps_the_digest_of_the_exact_read_bytes() {
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().join("snapshot.gamepkg");
+        let mut writer = zip::ZipWriter::new(File::create(&path).unwrap());
+        writer
+            .start_file(
+                "assets/a",
+                zip::write::SimpleFileOptions::default()
+                    .compression_method(zip::CompressionMethod::Stored),
+            )
+            .unwrap();
+        writer.write_all(b"verified bytes").unwrap();
+        writer.finish().unwrap();
+        let (bytes, digest) = crate::files::archive_snapshot(&path).unwrap();
+        assert_eq!(digest, crate::verify::digest(&bytes));
+        let mut package = Package::open_snapshot(bytes, digest.clone()).unwrap();
+        assert_eq!(package.archive_digest().unwrap(), digest);
+        package.mark_verified();
+        std::fs::write(&path, b"replaced after verification").unwrap();
+        assert_eq!(package.asset_chunk("a", 0, 8).unwrap(), b"verified");
+    }
     #[test]
     fn verified_clones_read_concurrently_without_reopening_or_sharing_positions() {
         for method in [zip::CompressionMethod::Stored, zip::CompressionMethod::Zstd] {
