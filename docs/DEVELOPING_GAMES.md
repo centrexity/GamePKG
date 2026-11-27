@@ -64,7 +64,7 @@ Keep the name and version identical in both Cargo files. Hash the exact lockfile
 
 Use `gamepkg::asset_read` for package-relative assets, `rom_count`, `rom_size_at` and `rom_read_at` for player-selected ROMs, and `save_size`, `save_read` and `save_write` for the game's save blob. They never open arbitrary host files.
 
-For large saves, published 0.1.29 host or newers also provide
+For large saves, published 0.1.29 hosts and newer also provide
 `gamepkg::save_chunk(offset, total, bytes)`. Start at offset zero, send consecutive
 chunks of at most 65,536 bytes and finish the declared total within the same
 tick. The total cannot exceed 1,048,576 bytes. The host keeps the old save until
@@ -99,7 +99,7 @@ does not resize the window. Dimensions outside the 16-bit wire representation
 are unavailable, not clamped. Generated native/core/component bindings require
 the updated host; hosts older than 0.1.29 lack this call.
 
-Published 0.1.29 desktop hosts also provide:
+Published 0.1.30 desktop hosts also provide:
 
 - `window_vsync_preference()` reads the committed `Option<bool>` presentation
   preference for the next game-window launch. It requires signed input and a

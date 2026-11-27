@@ -2,7 +2,7 @@
 
 Games have no direct socket or HTTP-library access. Their native and optional Wasm runtimes call the same host-controlled API. Network access is off by default and is unrelated to package downloads or update URLs.
 
-Networking is a signed on/off permission in published 0.1.29 hosts:
+Networking is a signed on/off permission in published 0.1.30 hosts:
 
 ```toml
 [permissions]
@@ -21,7 +21,7 @@ available network interfaces determine which addresses can actually be reached.
 Earlier signed manifests using `"none"` are read as disabled; `"https"`,
 `"multiplayer"` and `"all"` are read as enabled. Their legacy `network_hosts`,
 `network_listen` and `network_allow_local` fields no longer restrict destinations
-and are omitted when writing a manifest. Published 0.1.29 binaries use this
+and are omitted when writing a manifest. Published 0.1.30 binaries use this
 policy; older releases retain the older behavior.
 
 HTTPS verifies certificates, supports explicit HTTPS ports, disables inherited

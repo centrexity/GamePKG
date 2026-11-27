@@ -18,23 +18,14 @@ pub(crate) mod scan_probe {
     pub(crate) fn record() {
         CALLS.with(|calls| calls.set(calls.get() + 1));
     }
-    #[cfg(all(
-        feature = "gui",
-        any(
-            all(windows, any(target_arch = "x86", target_arch = "x86_64")),
-            all(target_os = "linux", target_arch = "x86_64")
-        )
-    ))]
+    // Only the native attestation tests observe the scan count. Match the
+    // platform/feature gate on `native::tick` so strict warning builds on
+    // other hosts and feature sets do not see unused helpers.
+    #[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
     pub(crate) fn reset() {
         CALLS.with(|calls| calls.set(0));
     }
-    #[cfg(all(
-        feature = "gui",
-        any(
-            all(windows, any(target_arch = "x86", target_arch = "x86_64")),
-            all(target_os = "linux", target_arch = "x86_64")
-        )
-    ))]
+    #[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
     pub(crate) fn count() -> usize {
         CALLS.with(Cell::get)
     }

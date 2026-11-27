@@ -13,6 +13,9 @@ The optional browser cache is implemented by GamePKG using the standard IndexedD
 | Area | Behavior | Relevant verification |
 | --- | --- | --- |
 | Package identity | Embedded creator keys, signed contents and same-creator updates | `tests/security.rs`, `tests/registry.rs` |
+| Fast CLI listing | `gamepkg list` authenticates signed manifests only; strict desktop, install, build and launch verification still scans admitted source | `tests/registry.rs`, `src/registry.rs` |
+| Bounded host codecs | GamePKG-owned image, zstd, deflate, gzip and zip compatibility crates with explicit memory caps; no guest dependency or import path | `compat/*`, `tests/dependency_attacks.rs` |
+| Host SIMD | Static and runtime AVX/AVX2/AVX-512/NEON detection through vendored `fearless_simd`; no CPU identity or intrinsic exposed to games | `src/host_simd.rs`, `tests/platform_build_boundary.rs` |
 | Game metadata | Signed titles, descriptions, authors, project links and genres; unverified catalog previews | `tests/metadata.rs`, `tests/metadata_gui.py` |
 | Offline catalogs | Add games without downloading them or approving creators | `tests/catalog.rs`, `tests/library_play_gui.py` |
 | Native compilation | Default Linux checked-source CPU build; reviewed Takedawn native profile on Linux/Windows x64; explicit Wasm targets; no guest crates | `tests/native_build.py`, `tests/dependencies.rs`, `tools/check_takedawn_windows_package.ps1` |
@@ -133,7 +136,7 @@ corruption and 112-second repair retaining all 487 object hashes/timestamps and
 signed package identity. That check uses no original game media. Physical Windows
 gameplay qualification remains open. The v14 evidence below remains specific to
 that earlier kit.
-The published 0.1.29 app includes this native engine. A Windows host build
+The published 0.1.30 app includes this native engine. A Windows host build
 or asset-free window test does not prove original-game Vulkan/audio/controller
 behavior on physical Windows hardware. The v14 Windows signed Build/repair
 gate passes in [run 40446319498](https://github.com/centrexity/GamePKG/actions/runs/40446319498),
