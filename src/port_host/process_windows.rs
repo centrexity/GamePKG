@@ -4,7 +4,7 @@ use super::{
     reaper, Artifact, Bootstrap, NativeLaunch, Permit, Process, Target,
 };
 use anyhow::{ensure, Context, Result};
-use gamepkg_takedawn_windows_runner::{Sandbox, WorkerProcess};
+use gamepkg_native_windows_runner::{Sandbox, WorkerProcess};
 use std::{
     collections::VecDeque,
     ffi::OsString,

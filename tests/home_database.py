@@ -11,21 +11,21 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-home-db-') as temporary:
         assert result.returncode==0,result.stderr
         return result.stdout
     key=root/'key';key.write_text('65'*32)
-    run('pack',PROJECT/'ports/2048','-o',root/'2048.gamepkg','--key',key)
-    run('install',root/'2048.gamepkg','--trust-creator')
+    run('pack',PROJECT/'examples/minimal','-o',root/'example.gamepkg','--key',key)
+    run('install',root/'example.gamepkg','--trust-creator')
     library=home/'.local/share/gamepkg';database=library/'database/library.json'
-    assert (library/'com.gamepkg.2048.gamepkg').is_file()
+    assert (library/'com.gamepkg.minimal.gamepkg').is_file()
     previous=None
     for _ in range(2):
         host=subprocess.Popen([str(CLI),'web-library','--port','0'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
         try:
             line=host.stdout.readline();assert line.startswith('Open http://'),line
-            record=json.loads(database.read_text());assert record['games'][0]['manifest']['id']=='com.gamepkg.2048'
+            record=json.loads(database.read_text());assert record['games'][0]['manifest']['id']=='com.gamepkg.minimal'
             if previous is not None:
                 for field in ["scope","games","catalog","settings","rejected"]:assert record[field]==previous[field],field
             previous=record
         finally:
             host.terminate();host.wait(timeout=10)
-        assert 'com.gamepkg.2048' in run('list')
+        assert 'com.gamepkg.minimal' in run('list')
     assert database.is_file()
     print('Home database passed: default home folder, native restart, library identity and persistent metadata.')

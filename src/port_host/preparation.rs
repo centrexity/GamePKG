@@ -88,15 +88,15 @@ pub enum LocalLayout {
     None,
     /// Host-owned physical RAM backing for checked, statically compiled Xbox
     /// functions. Guest addresses are offsets/aliases, never native pointers.
-    TakedawnRam,
+    NativeRam,
     /// Separate checked main/contiguous RAM and flash backings. The port
     /// supplies explicit guest aliases; device apertures are not RAM windows.
-    TakedawnMemory,
+    NativeMemory,
     /// The same game RAM/flash plus a separate 1 MiB non-guest scratch window.
     /// The host selects this reviewed layout; game source cannot request bases.
-    TakedawnServices,
-    HaloI686,
-    HaloCustomEditionI686,
+    NativeServices,
+    I686FixedLayout,
+    CustomEditionI686,
 }
 impl LocalLayout {
     fn windows(self) -> &'static [super::local_runtime::Window] {
@@ -123,11 +123,11 @@ impl LocalLayout {
         };
         match self {
             Self::None => &[],
-            Self::TakedawnRam => &[MAIN],
-            Self::TakedawnMemory => &[MAIN, CONTIGUOUS, FLASH],
-            Self::TakedawnServices => &[MAIN, CONTIGUOUS, FLASH, SCRATCH],
-            Self::HaloI686 => &[GUEST_IMAGE_RAM],
-            Self::HaloCustomEditionI686 => &[
+            Self::NativeRam => &[MAIN],
+            Self::NativeMemory => &[MAIN, CONTIGUOUS, FLASH],
+            Self::NativeServices => &[MAIN, CONTIGUOUS, FLASH, SCRATCH],
+            Self::I686FixedLayout => &[GUEST_IMAGE_RAM],
+            Self::CustomEditionI686 => &[
                 GUEST_IMAGE_RAM,
                 Window {
                     address: 0x40440000,
@@ -208,9 +208,9 @@ impl Plan {
             matches!(
                 layout,
                 LocalLayout::None
-                    | LocalLayout::TakedawnRam
-                    | LocalLayout::TakedawnMemory
-                    | LocalLayout::TakedawnServices
+                    | LocalLayout::NativeRam
+                    | LocalLayout::NativeMemory
+                    | LocalLayout::NativeServices
             ) || matches!(target, Target::Linux32 | Target::Windows32),
             "fixed Xbox layout requires i686"
         );
@@ -506,7 +506,7 @@ fn tools(cache: &Path, target: Target) -> Result<Tools> {
         PathBuf::from(std::str::from_utf8(&output.stdout)?.trim()).canonicalize()?
     };
     #[cfg(windows)]
-    let root = crate::takedawn_windows_sdk::prepare_source_target(cache, target.triple())?
+    let root = crate::windows_sdk::prepare_source_target(cache, target.triple())?
         .0
         .canonicalize()?;
     #[cfg(not(any(windows, target_os = "linux")))]
@@ -536,7 +536,7 @@ fn tools(cache: &Path, target: Target) -> Result<Tools> {
         } else {
             "x86_64-pc-windows-gnu"
         };
-        let (nm, identity) = crate::takedawn_windows_sdk::prepare_auditor(cache, host)?;
+        let (nm, identity) = crate::windows_sdk::prepare_auditor(cache, host)?;
         (
             nm,
             root.join(format!(
@@ -748,7 +748,7 @@ fn run(
     }
     #[cfg(windows)]
     {
-        use gamepkg_takedawn_windows_runner::Sandbox;
+        use gamepkg_native_windows_runner::Sandbox;
         let identity = crate::verify::digest(source.as_os_str().as_encoded_bytes());
         let sandbox = Sandbox::open(&format!("GamePKG.ServiceCompiler.{}", &identity[..32]))?;
         sandbox.grant_runtime(&tools.root)?;

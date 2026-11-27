@@ -248,9 +248,9 @@ mod native_raster_tests {
     use super::*;
     #[test]
     #[ignore = "requires explicitly selected reviewed port templates, pinned Slang and confined compiler namespaces"]
-    fn takedawn_templates_confined_preparation() {
+    fn native_templates_confined_preparation() {
         let templates = PathBuf::from(
-            std::env::var_os("GAMEPKG_TAKEDAWN_TEMPLATE_ROOT")
+            std::env::var_os("GAMEPKG_NATIVE_TEMPLATE_ROOT")
                 .expect("select the reviewed service-renderer/shaders directory"),
         );
         let root = tempfile::tempdir().unwrap();
@@ -298,7 +298,7 @@ mod native_raster_tests {
         // Qualify the selected backend independently; never fall back after a
         // failed conversion. The default matches normal native preparation.
         let backend =
-            std::env::var("GAMEPKG_TAKEDAWN_SHADER_BACKEND").unwrap_or_else(|_| "wgsl".into());
+            std::env::var("GAMEPKG_NATIVE_SHADER_BACKEND").unwrap_or_else(|_| "wgsl".into());
         let settings = Settings {
             shader_backend: backend.clone(),
             ..Default::default()
@@ -697,7 +697,7 @@ fn run_shader(
     stage: &Path,
     args: &[OsString],
 ) -> Result<Vec<u8>> {
-    use gamepkg_takedawn_windows_runner::Sandbox;
+    use gamepkg_native_windows_runner::Sandbox;
     use std::time::{Duration, Instant};
     let stage = stage.canonicalize()?;
     let compiler = compiler.canonicalize()?;
@@ -705,20 +705,18 @@ fn run_shader(
     let sandbox = Sandbox::open(&format!("GamePKG.Shader.{}", &identity[..32]))?;
     sandbox.grant_runtime(&compiler)?;
     let mut args = args.to_vec();
-    let mut paths = vec![crate::takedawn_windows_sdk::compiler_path(
-        &compiler.join("bin"),
-    )?];
+    let mut paths = vec![crate::windows_sdk::compiler_path(&compiler.join("bin"))?];
     if let Some(dxc) = dxc {
         let dxc = dxc.canonicalize()?;
         sandbox.grant_runtime(&dxc)?;
-        let bin = crate::takedawn_windows_sdk::compiler_path(&dxc.join("bin/x64"))?;
+        let bin = crate::windows_sdk::compiler_path(&dxc.join("bin/x64"))?;
         args.push("-dxc-path".into());
         // Slang expects the directory, not the DLL filename.
         args.push(bin.as_os_str().to_owned());
         paths.push(bin);
     }
     sandbox.grant_saves(&stage)?;
-    let directory = crate::takedawn_windows_sdk::compiler_path(&stage)?;
+    let directory = crate::windows_sdk::compiler_path(&stage)?;
     let temporary = directory.join("tmp");
     fs::create_dir_all(&temporary)?;
     let values = [
@@ -818,7 +816,7 @@ fn dxc_root(_root: &Path, settings: &Settings) -> Result<Option<PathBuf>> {
             .or_else(|| {
                 (!settings.dxc_directory.is_empty()).then(|| PathBuf::from(&settings.dxc_directory))
             });
-        Ok(Some(crate::takedawn_windows_sdk::prepare_dxc(
+        Ok(Some(crate::windows_sdk::prepare_dxc(
             _root,
             selected.as_deref(),
         )?))
@@ -871,7 +869,7 @@ fn compiler_cache(
             (!settings.slang_directory.is_empty()).then(|| PathBuf::from(&settings.slang_directory))
         });
     #[cfg(windows)]
-    let compiler = crate::takedawn_windows_sdk::prepare_slang(root, selected.as_deref())?;
+    let compiler = crate::windows_sdk::prepare_slang(root, selected.as_deref())?;
     #[cfg(not(windows))]
     let compiler =
         fs::canonicalize(selected.context(
@@ -1521,7 +1519,7 @@ mod platform_tests {
             if let Some(dxc) = &dxc {
                 command
                     .arg("-dxc-path")
-                    .arg(crate::takedawn_windows_sdk::compiler_path(&dxc.join("bin/x64")).unwrap());
+                    .arg(crate::windows_sdk::compiler_path(&dxc.join("bin/x64")).unwrap());
             }
             let control =
                 crate::compiler::run_timed(&mut command, std::time::Duration::from_secs(20))

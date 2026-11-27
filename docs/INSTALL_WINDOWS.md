@@ -34,39 +34,8 @@ loading, save/history, shader validation, corrupt-output and denied-host-include
 checks. These checks do not prove physical GPU/controller/audio compatibility
 for every game.
 
-Reviewed C-based engines have separate support below; this does not enable every
-engine profile on Windows. **Build Wasm** and web export remain explicit alternatives.
-
-## Native Takedawn source preview
-
-The 0.1.18 development source connects native **Build**, **Play**, and integrity
-repair for the host-reviewed v15 Takedawn kit on 64-bit Windows. This path uses
-standalone Rust/Clang tools prepared through Settings or `gamepkg setup-native-tools`;
-it needs neither WSL nor Python. The older Linux-only package must be updated
-before building it on Windows. Recipe 0.1.4 selects v15; 0.1.3 selects v14 and older admitted recipes
-retain creator/save continuity but can stop on unsupported execution and need
-an update. The published 0.1.31 app includes this native engine; older
-published apps do not.
-
-In the development app, choose **Settings → Prepare native build tools**, then
-save settings with **Memory ceiling** set to at least 4096 MiB. Import the signed
-compatible recipe through **Add**, open its game page, choose your supported
-original Xbox USA ISO, and select **Build**. The first optimized build can take
-an hour or more; verified completed units are reused after interruption. **Play**
-becomes available after a successful build and disc selection. Keep the whole
-portable app folder together. A private hardware-test bundle uses a separate
-preview library and its included recipe rather than changing the normal library.
-
-The game owns its Vulkan window. GamePKG retains the selected ISO as a read-only
-handle, saves the selection after successful admission, keeps original saves
-scoped to the game/creator and tracks play time across the original restart flow.
-The player uses an AppContainer with networking disabled and explicit runtime/save
-access. Actual Windows tests verify real child-window creation and closure across
-managed restarts under this confinement. The full native signed Build and
-integrity-repair workflow also passes on Windows, preserving all 487 compiled
-Rust units through repair. Original-game Vulkan, sound and physical
-controllers still need Windows hardware qualification; Wine checks do not replace
-that. See the [native Windows build notes](../engines/takedawn/rust-port/WINDOWS_BUILD.md).
+Engine ports are documented in the separate Ports checkout; GamePKG core does
+not enable every engine profile on Windows. **Build Wasm** and web export remain explicit alternatives.
 
 ## Optional Wasm compiler connection
 
@@ -84,29 +53,13 @@ For an actual Windows/WSL integration check after setup, build the current Windo
 
 Add `--gui` with Pillow installed and a working OpenGL driver to verify actual blue/green shader pixels and held/released keyboard input for both runtime profiles. The hosted test uses checksum-pinned Mesa 26.2.4 DLLs only in its build folder; those test DLLs are excluded from the distribution. Screenshots and diagnostics are retained as a separate test artifact.
 
-The optional Wasm compiler connection requires a Linux worker with exactly the same GamePKG version. Use the Linux and Windows archives from the same release for that connection. The full source preflight policy and builtin engine version are checked before compiler outputs are accepted. The standalone Takedawn native pipeline above uses its managed Windows tools instead.
+The optional Wasm compiler connection requires a Linux worker with exactly the same GamePKG version. Use the Linux and Windows archives from the same release for that connection. The full source preflight policy and built-in engine version are checked before compiler outputs are accepted.
 
-## Zelda3 optional engine
+## Ports checkout
 
-Zelda3 uses the same opt-in WSL 2 compiler exchange as other source games.
-Install Clang 18, wasi-libc and libclang-rt-18-dev-wasm32 in that compiler's
-Ubuntu 24.04 environment. The matching host includes the pinned engine
-sources and transfers its verified Wasm/receipt alongside the Rust entry.
-No player ROM or save data is sent to the compiler.
-
-Playback runs in the native Windows host and does not use WSL or Python.
-ROM decoding is built into the executable; no interpreter, pip, Pillow, PyYAML
-or separate runtime installation is needed. Install/build the Zelda3 package and select your own supported USA ROM in the
-library. The ROM is decoded only in RAM; only game SRAM is persisted.
-See engines/zelda3/README.md for controls and tests.
-
-## DOOM native compatibility package
-
-In a preview that includes the compatibility SDK, import the signed migrated
-Doom package, choose your original DOOM.WAD or DOOM2.WAD, and use **Build** and
-**Play**. GamePKG prepares its pinned tools automatically. Its separate game
-executable reads the selected WAD in place and keeps new saves in the same
-creator and game scope. Native Windows gameplay still requires qualification
-on the physical desktop.
+Native engine ports, their game-specific prerequisites and their signed recipes
+live in the separate GamePKG Ports checkout. GamePKG core installs signed
+packages, provides generic host services and never includes game media. Follow
+the Ports checkout documentation for port-specific setup and qualification.
 
 The desktop renderer now defaults to Vulkan. Install the graphics driver’s Vulkan runtime, or launch `gamepkg-gui.exe --renderer opengl` to choose OpenGL explicitly. Other source engines on Windows use the separate **Build Wasm** and **Play Wasm** controls with the matching Linux compiler configured above. HTTPS and TCP/UDP APIs are host-mediated for Wasm gameplay as well.

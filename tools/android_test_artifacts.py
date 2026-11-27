@@ -9,7 +9,7 @@ import sys
 
 SUITES = (
     "components", "portability", "runtime", "render_resources", "memory_budget",
-    "audio_effect_assets", "music_permissions", "game_arkanoo",
+    "audio_effect_assets", "music_permissions",
 )
 
 

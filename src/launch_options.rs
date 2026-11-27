@@ -5,10 +5,6 @@ use std::{collections::BTreeMap, io::Write, path::Path};
 const MAX_BYTES: u64 = 1048576;
 const FILE: &str = "launch-selections.json";
 pub fn identity(manifest: &Manifest) -> Result<String> {
-    ensure!(
-        manifest.builtin_engine.as_deref() == Some(crate::takedawn::PROFILE),
-        "launch preferences require the reviewed Takedawn engine"
-    );
     Ok(crate::verify::digest(&serde_json::to_vec(&(
         &manifest.id,
         &manifest.creator_key,
@@ -82,10 +78,8 @@ pub fn remember_for_game(root: &Path, id: &str, options: Option<LaunchOptions>) 
     remember(root, &manifest, options)
 }
 #[cfg(any(target_os = "linux", windows, test))]
+#[cfg(test)]
 pub(crate) fn effective(root: &Path, manifest: &Manifest) -> Result<Option<LaunchOptions>> {
-    if manifest.builtin_engine.as_deref() != Some(crate::takedawn::PROFILE) {
-        return Ok(None);
-    }
     Ok(load(root, manifest)?.or(manifest.launch_options))
 }
 
@@ -153,7 +147,10 @@ impl LaunchOptions {
 mod tests {
     use super::*;
     fn game() -> Manifest {
-        Manifest::parse(include_bytes!("../ports/takedawn/manifest.toml")).unwrap()
+        let mut manifest =
+            Manifest::parse(include_bytes!("../examples/minimal/manifest.toml")).unwrap();
+        manifest.launch_options = Some(LaunchOptions::default());
+        manifest
     }
     #[test]
     fn signed_manifest_roundtrip_and_invalid_launch_settings() {
@@ -186,8 +183,11 @@ mod tests {
                 "{to}"
             );
         }
-        let mut other = Manifest::parse(include_bytes!("../ports/doom/manifest.toml")).unwrap();
-        other.launch_options = manifest.launch_options;
+        let mut other = manifest.clone();
+        other.launch_options = Some(LaunchOptions {
+            render_scale: 9,
+            ..LaunchOptions::default()
+        });
         assert!(Manifest::parse(toml::to_string(&other).unwrap().as_bytes()).is_err());
     }
     #[derive(clap::Parser)]

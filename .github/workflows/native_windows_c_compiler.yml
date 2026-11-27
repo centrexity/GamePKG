@@ -6,18 +6,9 @@ on:
       - 'src/native/engine_sources.rs'
       - 'src/native/build.rs'
       - 'src/native/engine.rs.txt'
-      - 'src/native/doom_fixture.rs'
       - 'src/native/session.rs'
-      - 'src/native/zelda_stdio.c.txt'
-      - 'src/native/doom_stdio.c.txt'
-      - 'src/doom.rs'
-      - 'src/zelda3.rs'
-      - 'engines/doom/**'
-      - 'engines/zelda3/**'
       - 'src/windows_compiler.rs'
-      - 'src/takedawn_windows_sdk.rs'
-      - 'engines/takedawn/windows-dependencies.json'
-      - 'engines/takedawn/windows-runner/**'
+      - 'engines/native-services/windows-runner/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
       - '.github/workflows/native_windows_c_compiler.yml'
@@ -27,18 +18,9 @@ on:
       - 'src/native/engine_sources.rs'
       - 'src/native/build.rs'
       - 'src/native/engine.rs.txt'
-      - 'src/native/doom_fixture.rs'
       - 'src/native/session.rs'
-      - 'src/native/zelda_stdio.c.txt'
-      - 'src/native/doom_stdio.c.txt'
-      - 'src/doom.rs'
-      - 'src/zelda3.rs'
-      - 'engines/doom/**'
-      - 'engines/zelda3/**'
       - 'src/windows_compiler.rs'
-      - 'src/takedawn_windows_sdk.rs'
-      - 'engines/takedawn/windows-dependencies.json'
-      - 'engines/takedawn/windows-runner/**'
+      - 'engines/native-services/windows-runner/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
       - '.github/workflows/native_windows_c_compiler.yml'
@@ -86,15 +68,6 @@ jobs:
           if ($log -notmatch 'Verified confined reviewed C compiler:') { throw 'Missing target/ABI and denied-include qualification' }
           if ($log -notmatch 'Verified reviewed C section collection: dead missing call discarded; live missing call rejected\.') { throw 'Missing paired dead/live C link controls' }
           if ($log -notmatch 'test result: ok\. 1 passed; 0 failed;') { throw 'The exact C compiler test did not pass' }
-      - name: Verify retired packages cannot trigger a Windows build
-        shell: pwsh
-        run: |
-          cargo test --locked --target ${{ matrix.target }} --lib native::windows_build::tests::retired_engine_builds_are_denied_before_tools -- --exact --nocapture 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP/windows-engine-denial.log"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $log = Get-Content -Raw "$env:RUNNER_TEMP/windows-engine-denial.log"
-          foreach ($port in @('doom','zelda3')) {
-             if ($log -notmatch "Verified Windows legacy engine admission denial: $port;") { throw "Missing native admission denial: $port" }
-          }
       - name: Preserve the C compiler diagnostics
         if: always()
         uses: actions/upload-artifact@v4
@@ -102,7 +75,6 @@ jobs:
           name: reviewed-c-compiler-${{ matrix.target }}
           path: |
             ${{ runner.temp }}/reviewed-c-compiler.log
-            ${{ runner.temp }}/windows-engine-denial.log
             ${{ runner.temp }}/private-compiler-root.log
           retention-days: 7
           if-no-files-found: warn

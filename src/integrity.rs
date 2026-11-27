@@ -63,8 +63,6 @@ fn check_locked(root: &Path, id: &str) -> Result<String> {
     package.resolve_shared_assets(root)?;
     retain_package(root, &manifest, &root.join(format!("{id}.gamepkg")))?;
     crate::progress::load(root, &manifest.id, &manifest.creator_key)?;
-    crate::video_selections::effective(root, &manifest)
-        .context("invalid saved display settings")?;
     let native = crate::native::cache_path(root, id)?;
     let is_native = crate::native::build_supported(&manifest) && native.exists();
     let path = if is_native {
@@ -88,20 +86,6 @@ fn check_locked(root: &Path, id: &str) -> Result<String> {
     }
     let bytes = crate::files::read_regular(&path, limit, false)?;
     verify_build(&path, &bytes)?;
-    if !is_native && manifest.builtin_engine.as_deref() == Some(crate::zelda3::PROFILE) {
-        let engine = path.with_file_name("zelda3.wasm");
-        let bytes = crate::files::read_regular(&engine, 32 * 1048576, false)
-            .context("rebuild the pinned Zelda engine before playing")?;
-        verify_build(&engine, &bytes)?;
-        crate::zelda3::validate_current(&bytes)?;
-    }
-    if !is_native && manifest.builtin_engine.as_deref() == Some(crate::doom::PROFILE) {
-        let engine = path.with_file_name("doom.wasm");
-        let bytes = crate::files::read_regular(&engine, 32 * 1048576, false)
-            .context("rebuild the pinned DOOM engine before playing")?;
-        verify_build(&engine, &bytes)?;
-        crate::doom::validate_current(&bytes)?;
-    }
     if !(if is_native {
         crate::native::is_built(root, id)?
     } else {

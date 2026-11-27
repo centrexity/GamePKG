@@ -73,6 +73,7 @@ impl Selection {
     /// Commands contain only canonical DNS/IPv4 hostnames and decimal ports.
     /// They are passed directly as an engine argument, never through a shell.
     #[cfg(any(target_os = "linux", test))]
+    #[cfg(test)]
     pub(crate) fn commands(&self) -> Result<String> {
         let normalized = self.normalized()?;
         let mut commands = String::new();
@@ -209,6 +210,7 @@ pub fn remember_for_game(root: &Path, id: &str, selection: &Selection) -> Result
     Ok(())
 }
 #[cfg(any(target_os = "linux", test))]
+#[cfg(test)]
 pub(crate) fn effective(root: &Path, manifest: &Manifest) -> Result<(Permissions, String)> {
     if !manifest.uses_selected_servers() || !manifest.permissions.network {
         return Ok((manifest.permissions.clone(), String::new()));
@@ -226,7 +228,17 @@ pub(crate) fn effective(root: &Path, manifest: &Manifest) -> Result<(Permissions
 mod tests {
     use super::*;
     fn manifest() -> Manifest {
-        Manifest::parse(include_bytes!("../ports/cube2/manifest.toml")).unwrap()
+        let mut manifest =
+            Manifest::parse(include_bytes!("../examples/minimal/manifest.toml")).unwrap();
+        manifest.permissions.network = true;
+        manifest.permissions.audio = true;
+        manifest.permissions.save = true;
+        manifest.game_data = Some(crate::manifest::GameDataRequirement {
+            title: "Multiplayer".into(),
+            user_selected_servers: true,
+            layouts: vec![],
+        });
+        manifest
     }
     fn join() -> Selection {
         Selection {

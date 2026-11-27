@@ -49,7 +49,7 @@ To try a ready-to-install game, click **Add** in the desktop library, paste this
 https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demos.gamepkglist
 ```
 
-The catalog adds four games without downloading them. Zelda requires your own supported USA ROM; the three original demos do not. Click Collect Stars to open its game page, choose **Download / inspect**, review and approve its creator, then **Build** and **Play**. Those three original demos require no ROM. In Collect Stars, use the arrow keys or WASD to move toward the yellow target; collecting stars increases your score and unlocks achievements. In Shape Playground and PNG Sprite Playground, hold Left or Right to move the square or sprite. Use **Back to game** to return to its page, then **Back to library** to browse your games. The demo manifests contain signed update URLs, so **Check for updates** can verify whether a newer same-creator version is available. For offline use, download the [demo store](https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demos.gamepkgstore), then inspect and import that local file. [Demo checksums](https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demo-packages.sha256) cover the packages, catalog and store.
+The catalog adds ready-to-install example games without downloading them. Click Collect Stars to open its game page, choose **Download / inspect**, review and approve its creator, then **Build** and **Play**. The examples require no ROM. In Collect Stars, use the arrow keys or WASD to move toward the yellow target; collecting stars increases your score and unlocks achievements. In Shape Playground and PNG Sprite Playground, hold Left or Right to move the square or sprite. Use **Back to game** to return to its page, then **Back to library** to browse your games. The demo manifests contain signed update URLs, so **Check for updates** can verify whether a newer same-creator version is available. For offline use, download the [demo store](https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demos.gamepkgstore), then inspect and import that local file. [Demo checksums](https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demo-packages.sha256) cover the packages, catalog and store.
 
 The window opens immediately while catalog reads and installed packages are verified off the UI thread; **Loading library…** stays visible until every package has passed strict verification and playable rows are ready. List URLs imported through **Add** (or `import-list`) are remembered, including GitHub projects and Tor URLs. **Refresh library** updates all saved URLs and adds their latest game information without downloading games or approving creators. On **Add**, use **Update list** for one URL or **Remove list** followed by **Confirm removal** to stop following it. Removal keeps installed games and entries supplied by other lists. Failed updates keep the last good list. Re-import older list URLs once to start remembering them. Local files are imported as offline snapshots.
 
@@ -71,40 +71,10 @@ Open a game’s page and click each ROM file field to select its named file. The
 
 For separately installed WASI libraries, set **Settings → C/WASI build tools folder** to the sysroot folder (either `/usr` or a folder containing `usr/include/wasm32-wasi` and its matching libraries). Use **Check C/WASI build tools**, then **Save settings**. Leave it empty for system packages. Engine-specific environment overrides still take precedence. The Windows compiler uses the settings saved inside its Linux environment.
 
-## Zelda3 optional engine
+## Ports checkout
 
-For the 0.1.6 Zelda3 port, Ubuntu 24.04 additionally needs Clang 18,
-wasi-libc and libclang-rt-18-dev-wasm32. No Python or external ROM decoder is
-needed for building or playing Zelda3. Build ports/zelda3 as a signed package
-and select your supported USA ROM in the library. No extracted assets are written.
-See engines/zelda3/README.md for the complete setup and verification details.
-
-## DOOM native compatibility package
-
-Use a GamePKG build with the native compatibility SDK and a signed native DOOM
-package. Open the game page, select your own `DOOM.WAD` or `DOOM2.WAD`, then
-choose **Build** and **Play**. The game opens in its own window and reads the
-selected WAD in place. Saves are scoped to the signed creator and game.
-
-On Linux, use the Rust and Cargo setup and the native compatibility SDK
-described above. On Windows, GamePKG prepares its pinned native compiler
-tools automatically. The native DOOM build requires neither the C/WASI
-toolchain nor WSL or Python.
-
-The migrated package requires both the updated app and an updated signed
-package from GamePKG Ports. See the
-[port instructions](https://github.com/centrexity/GamePKG_Ports/blob/main/DOOM.md).
-
-See [native runtime setup](NATIVE_RUNTIME.md) for target-specific caches and isolation, and [networking](NETWORKING.md) for separately declared HTTPS and multiplayer permissions.
-
-## Original-data native engine
-
-GamePKG 0.1.15 includes the reviewed Cube 2 engine. Its native build needs GCC/G++, Make, SDL2, SDL2_image, SDL2_mixer, zlib and OpenGL development libraries. On Ubuntu 24.04:
-
-```sh
-sudo apt install build-essential libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev zlib1g-dev libgl1-mesa-dev libgl1-mesa-dri
-```
-
-Import the [ports catalog](https://github.com/centrexity/GamePKG_Ports), download and inspect the signed selector, then Build. Choose an original Sauerbraten installation containing `data` and `packages` on its game page. The game reads these directories in place; no original media is included in the package. Set the memory ceiling to at least 2048 MiB in Settings. Software rendering may need a 500 ms tick deadline. Play opens a separate game-only window, with Vulkan presentation by default. This engine currently runs on Linux; it is not a Windows native engine. Python is not needed.
-
-See [engine setup, controls, saves and multiplayer](../engines/cube2/README.md). Networking stays off until you explicitly choose a join/hosting address or a master for the server browser. Local/private addresses need their separate opt-in.
+Native engine ports and their game-specific setup live in the separate
+GamePKG Ports checkout. GamePKG core installs signed packages and provides
+generic host services; it does not include game media or engine recipes. Follow
+the Ports checkout documentation for port-specific prerequisites, manifests and
+source kits.

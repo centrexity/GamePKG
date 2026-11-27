@@ -6,7 +6,7 @@ import argparse,json,os,shutil,tempfile,threading
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
-parser=argparse.ArgumentParser();parser.add_argument('report',type=Path);parser.add_argument('--assets',type=Path);args=parser.parse_args()
+parser=argparse.ArgumentParser();parser.add_argument('report',type=Path);parser.add_argument('--assets',type=Path,required=True);args=parser.parse_args()
 project=Path(__file__).resolve().parents[1]
 class Quiet(SimpleHTTPRequestHandler):
  def log_message(self,*args):pass
@@ -16,7 +16,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-exact-png-') as temporary:
  report=json.loads(args.report.read_text());(root/'report.json').write_text(json.dumps(report))
  for row in report['images']:
   name=row['asset'];assert not Path(name).is_absolute() and '..' not in Path(name).parts
-  destination=root/'assets'/name;destination.parent.mkdir(parents=True,exist_ok=True);shutil.copy2((args.assets or project/'ports/arkanoo/assets')/name,destination)
+  destination=root/'assets'/name;destination.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(args.assets/name,destination)
  (root/'index.html').write_text('<!doctype html><title>Private exact PNG verification</title>')
  (root/'worker.js').write_text('''onmessage=async()=>{try{
  const {decodeExactPNG}=await import('./png-exact.js'),report=await (await fetch('report.json')).json();let checked=0;
@@ -45,5 +45,5 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-exact-png-') as temporary:
   assert report.get('render_profile') in [None,'large-images-v1']
   expected=178 if report.get('render_profile')=='large-images-v1' else 76
   assert result=={'checked':expected},result
-  print('Actual Chromium worker: consecutive startup and individual decoding preserve all',expected,'original PNG RGBA hashes; corrupted CRC rejects.')
+  print('Actual Chromium worker: consecutive startup and individual decoding preserve all',expected,'PNG RGBA hashes; corrupted CRC rejects.')
  finally:browser.quit();server.shutdown();server.server_close()

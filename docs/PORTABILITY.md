@@ -77,7 +77,7 @@ them on a dedicated test device. The runner uses the reported paths, including
 custom Cargo artifact directories, and ignores stale binaries from older builds:
 
 ```sh
-cargo test --locked --target i686-linux-android --lib --test portability --test runtime --test components --test render_resources --test memory_budget --test audio_effect_assets --test music_permissions --test game_arkanoo --no-run --message-format=json > android-tests.json
+cargo test --locked --target i686-linux-android --lib --test portability --test runtime --test components --test render_resources --test memory_budget --test audio_effect_assets --test music_permissions --no-run --message-format=json > android-tests.json
 bash tools/test_android_runtime.sh emulator-5554 i686-linux-android android-tests.json
 ```
 

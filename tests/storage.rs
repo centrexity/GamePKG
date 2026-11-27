@@ -98,34 +98,40 @@ fn storage_inventory_does_not_follow_links_outside_the_library() {
 }
 
 #[test]
-fn reviewed_native_storage_counts_both_platform_caches_without_charging_other_games() {
+fn reviewed_native_storage_counts_the_signed_build_without_charging_shared_caches() {
     let root = tempfile::tempdir().unwrap();
     let root = root.path();
-    let mut manifest = Manifest::parse(include_bytes!("../ports/takedawn/manifest.toml")).unwrap();
+    let mut manifest =
+        Manifest::parse(include_bytes!("../examples/minimal/manifest.toml")).unwrap();
     manifest.creator_key = hex::encode([4u8; 32]);
     fs::write(root.join(format!("{}.gamepkg", manifest.id)), b"package").unwrap();
-    let windows = root.join("native-unit-cache/takedawn-windows");
-    fs::create_dir_all(&windows).unwrap();
-    fs::write(windows.join("unit.o"), b"windows-obj").unwrap();
-    fs::write(windows.join("unit.sha256"), b"checkpoint").unwrap();
-    // A native Windows library has no Linux cache. Its compiled work must still
-    // appear on the game page, even though the cache lives outside builds/.
-    assert_eq!(storage::usage(root, &manifest).unwrap().built_bytes, 21);
-
-    let linux = root.join("native-unit-cache/takedawn");
-    fs::create_dir_all(&linux).unwrap();
-    fs::write(linux.join("unit.o"), b"linux-obj").unwrap();
     let build = root
         .join("builds")
         .join(gamepkg::verify::digest(b"package"));
     fs::create_dir_all(&build).unwrap();
-    fs::write(build.join("native-game"), b"native").unwrap();
-    for folder in ["native-sdk/tools", "native-unit-cache/another-engine"] {
+    let native = b"native-binary";
+    let receipt = b"receipt";
+    fs::write(build.join("compatibility-game"), native).unwrap();
+    fs::write(build.join("compatibility-game.sha256"), receipt).unwrap();
+    let expected = (native.len() + receipt.len()) as u64;
+    assert_eq!(
+        storage::usage(root, &manifest).unwrap().built_bytes,
+        expected
+    );
+
+    for folder in [
+        "native-runtime-builds/pin/compiled/shared",
+        "native-unit-cache/another-engine",
+    ] {
         let folder = root.join(folder);
         fs::create_dir_all(&folder).unwrap();
         fs::write(folder.join("unrelated"), vec![0; 4096]).unwrap();
     }
-    assert_eq!(storage::usage(root, &manifest).unwrap().built_bytes, 36);
+    assert_eq!(
+        storage::usage(root, &manifest).unwrap().built_bytes,
+        expected
+    );
+
     let mut other = Manifest::parse(include_bytes!("../examples/minimal/manifest.toml")).unwrap();
     other.creator_key = hex::encode([5u8; 32]);
     fs::write(root.join(format!("{}.gamepkg", other.id)), b"other package").unwrap();
@@ -135,9 +141,9 @@ fn reviewed_native_storage_counts_both_platform_caches_without_charging_other_ga
     {
         let outside = tempfile::tempdir().unwrap();
         fs::write(outside.path().join("external"), vec![0; 8192]).unwrap();
-        fs::rename(&windows, root.join("old-windows-cache")).unwrap();
-        std::os::unix::fs::symlink(outside.path(), windows).unwrap();
-        assert_eq!(storage::usage(root, &manifest).unwrap().built_bytes, 15);
+        fs::rename(&build, root.join("old-build")).unwrap();
+        std::os::unix::fs::symlink(outside.path(), build).unwrap();
+        assert_eq!(storage::usage(root, &manifest).unwrap().built_bytes, 0);
     }
 }
 
@@ -150,19 +156,25 @@ fn sparse_native_disks_preserve_large_file_sizes_without_charging_empty_regions(
     };
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path();
-    let mut manifest = Manifest::parse(include_bytes!("../ports/takedawn/manifest.toml")).unwrap();
+    let mut manifest =
+        Manifest::parse(include_bytes!("../examples/minimal/manifest.toml")).unwrap();
     manifest.creator_key = hex::encode([6u8; 32]);
     let package = root.join(format!("{}.gamepkg", manifest.id));
     fs::write(&package, b"package").unwrap();
-    let saves = gamepkg::takedawn::data_path(
-        root,
-        &manifest.id,
-        &manifest.creator_key,
-        manifest.save_schema,
-    )
-    .join("saves");
+    let scope = if manifest.save_schema == 1 {
+        format!("GamePKG save v1\0{}\0{}", manifest.id, manifest.creator_key)
+    } else {
+        format!(
+            "GamePKG save v1\0{}\0{}\0schema={}",
+            manifest.id, manifest.creator_key, manifest.save_schema
+        )
+    };
+    let saves = root.join("saves");
     fs::create_dir_all(&saves).unwrap();
-    let disk = saves.join("Partition1.img");
+    let disk = saves.join(format!(
+        "{}.blob",
+        gamepkg::verify::digest(scope.as_bytes())
+    ));
     let mut file = fs::File::create(&disk).unwrap();
     let size = (6u64 << 30) + 123;
     file.set_len(size).unwrap();

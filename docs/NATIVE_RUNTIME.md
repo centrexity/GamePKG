@@ -30,7 +30,7 @@ builder, relocated-entry check and release packager reject such pairs. The hidde
 the version, platform, architecture and native recipe without opening a window or
 loading player settings. `BUILD.json` records that matching identity and the
 packager verifies the copied executable hashes against the validated pair.
-This is a compatibility check, not a creator signature or source provenance proof. The fingerprint includes the admitted Takedawn source-kit revision and the platform builder, so identical app versions cannot hide different builtin engine recipes.
+This is a compatibility check, not a creator signature or source provenance proof. The fingerprint includes the admitted source-kit identities and the platform builder, so identical app versions cannot hide different built-in engine recipes.
 
 ## Windows app icon
 
@@ -61,102 +61,11 @@ host-pinned textured raster profile with one RGBA8 2D texture/sampler pair. It
 still uses the WGSL/SPIR-V Vulkan preparation path; GLSL/OpenGL is only for the
 ordinary 2D shader service.
 
-The legacy C-based engines below retain direct platform support and remain
-blocked. Their historical optional build/play controls and compiler exchanges
-are not admission paths. The descriptions below document preserved migration
-inputs; they do not claim these engines can currently launch.
-
-## Legacy native engine profiles — currently blocked
-
-The Takedawn profile uses prepared Rust game functions and the pinned original
-C/C++ renderer, audio, input and system runtime. Its package can only select one
-of the source kits admitted by GamePKG's policy; it cannot replace a kit, add game
-source or choose build commands. Python and C2Rust are used during maintainer
-preparation and are absent from the player's build and launch requirements.
-
-On Linux, Build compiles offline with the local Rust compiler and Clang 18. CMake, Ninja,
-SDL2, epoxy, OpenSSL, Vulkan and glslang 15 development tools are also required.
-Use **Native tools folder** in Settings for an additional dependency prefix;
-`GAMEPKG_TAKEDAWN_NATIVE_SYSROOT` overrides it. The first optimized build is
-substantial; a complete prepared Rust build took about 77 minutes on the test
-machine. Verified per-unit compiler checkpoints let interrupted or repeated
-builds reuse completed work. Source, compiler, CPU and option changes invalidate
-the corresponding checkpoints; corrupt objects are compiled again. These
-compiler files count toward the game's displayed storage use. The current shared kit
-supports Linux x86-64 and the native Windows x64 preview.
-
-On Windows x64, **Prepare native build tools** in Settings (or
-`gamepkg setup-native-tools`) installs the verified standalone Rust/LLVM-MinGW,
-CMake, Ninja, SDL and Vulkan/glslang tools. No Python, WSL or vendor installer is
-required. The current unreleased 0.1.4 recipe selects v15 (0.1.3 selects the older v14), with 24,003 prepared
-Rust game functions across 487 units and 24,035 native exports. It requires the
-0.1.18 development app. See [Windows source builds](../engines/takedawn/rust-port/WINDOWS_BUILD.md).
-
-Play opens the original Vulkan window in its own native process. The selected
-supported Xbox ISO is opened read-only and read in place. Saves and caches use
-one game/creator/schema directory; another simultaneous session cannot write to
-it. A successful startup remembers the selected ISO and begins play tracking.
-An invalid disc does neither. Linux uses a 4 GiB physical-memory scope; Windows
-uses a 4 GiB committed-memory job limit. **Memory ceiling** must be at least
-4096 MiB. GamePKG's mute and volume
-settings apply to the original runtime.
-
-Native playback also enables immediate traps for untranslated instructions and
-logs unresolved functions. A sticky host audit stops the session and reports any
-reached unsupported path, including final output and managed-restart history.
-This does not fill in missing game behavior. Update an older game package if its
-runtime reaches such a path.
-
-The optional **60 FPS crash cameras** setting uses the reviewed Takedawn
-runtime's existing full-rate camera and simulation path. It is on by default
-when the settings file does not specify a choice. An explicitly saved `false`
-stays disabled. Change it in Settings or set `native_crash_60fps` in the app
-settings file. It applies to the next
-launch and managed restarts without rebuilding the game. Other engines do not
-use this setting. This path advances one simulation step per frame and needs
-sustained 60 FPS to preserve normal game speed. Leave it off if the hardware
-cannot keep that pace. This setting enables the full-rate path; it does not
-establish that a particular device or scene sustains 60 FPS.
-
-Maintainers can check the Windows command-handoff overlays without game assets:
-`python3 tools/check_takedawn_kick_handoff.py --toolkit /path/to/pinned/xboxrecomp`.
-This stages the pinned sources, rejects corrupt inputs and source/output aliases,
-and compiles the actual acknowledgement blocks for sanitized 64-bit and native
-32-bit regression checks. The negative control reproduces a flush acknowledged
-before a newly published command segment was consumed; the staged block keeps
-the flush pending until that segment has been scanned. The Linux memory overlay
-retains its previous behavior.
-
-Add `--windows-output /path/to/fixtures` to cross-build the Win32 handoff fixture
-from the actual staged helpers. Run `takedawn-kick-wake-fixture.exe` on Windows
-to exercise 20,000 event handoffs and 2,000 timer-only handoffs. Run it again with
-arguments `1`, `2`, and `3` in separate processes to force timer creation,
-timer arming, and wait failures respectively. These media-free checks verify
-ordering, early/repeated notifications and fallback progress; native race,
-frame-time, save/reload and physical input/audio checks remain separate.
-
-The optional **Native frame-stall watchdog** in Settings is off by default,
-including for existing settings files. In the reviewed standalone Takedawn
-runtime it watches actual frame flips and writes a hang report under the game's
-save directory (`crash`) after the chosen 5–600 second delay. It does not kill or
-restart the game. Before the first frame it allows at least 60 seconds. Loading
-and minimized windows can legitimately stop producing frames, so enable this
-only when investigating a stall. Changes apply on the next launch and also to
-managed game restarts. This diagnostic option does not change sandboxed tick
-deadlines, memory limits, or maintainer headless-test deadlines.
-
-This reviewed host engine contains unsafe Rust and native C/C++ code. It uses
-its own process isolation rather than the generic worker's per-tick host API
-and syscall allowlist described below. On Linux, its namespace exposes system libraries,
-GPU/audio/controller devices, selected desktop sockets, the read-only ISO and
-its own writable data directory. It has no network namespace connection or
-mount of the player's home/library. Verification and isolation do not establish
-complete engine memory safety or full platform/gameplay fidelity. Qualification
-details are in [the Rust port notes](../engines/takedawn/rust-port/README.md).
-On Windows, the player uses an AppContainer and owned job, with networking off,
-the selected read-only disc handle, verified runtime files and its own data
-directory. Basic real-window access under that confinement is verified on
-Windows; physical original-game Vulkan, sound and controllers still need testing.
+Native engine ports, their source kits and platform-specific setup live in the
+separate GamePKG Ports checkout. GamePKG core does not ship those recipes or
+grant them direct platform access. A port must migrate to the shared service
+contract and pass admission before its signed package can launch; unmigrated
+profiles remain blocked for build and play.
 
 ## Protections
 

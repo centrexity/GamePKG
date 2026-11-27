@@ -23,7 +23,7 @@ scan runs before GamePKG supplies the 2D bindings and game-state helper. The
 separate game object audit runs before linking. For example:
 
 ```sh
-cargo run --locked --features gui --example native-tick-game -- /path/to/2048 /path/to/local-test-library
+cargo run --locked --features gui --example native-tick-game -- /path/to/port-game /path/to/local-test-library
 ```
 
 Use a signed `.gamepkg` for a stable save identity. The runner signs a source
@@ -206,8 +206,7 @@ The linked Windows executable checks the AppContainer token and current job
 limits before accepting those ROMs or opening its window. Normal Windows
 Build and Play calls this launcher for offline standalone image and indexed
 Slang packages. Synthetic x86 and x64 Wine tests check order, contents, read-only
-access and cleared inheritance. The native Windows Doom test also requires
-AppContainer, a desktop Vulkan driver and a player-selected WAD.
+access and cleared inheritance.
 
 The launchers record play history for the signed game ID and creator
 in the existing library. The trusted player signals readiness after it
@@ -229,14 +228,11 @@ with the same accounting routine as the runtime, including the reviewed
 windows, task stacks and bookkeeping reservations.
 
 On Linux x64 the maintainer fixture
-`cargo run --features gui --example service-window -- --takedawn-templates`
-takes `GAMEPKG_TAKEDAWN_TEMPLATE_ROOT` from the reviewed ports checkout.
-The recipes map pipeline index to the cube-slot mask and verify each reviewed
-Slang hash against the signed fixture archive before compilation. The native
-fixture draws a diffuse triangle through all 16 actual templates and routes
-each of their four texture slots through the final combiner. It checks
-the center pixels for the diffuse draw and the 2D/cube samples before
-presenting. These checks use synthetic vertices and textures.
+`cargo run --features gui --example service-window`
+uses synthetic vertices, textures and shaders. It checks the window, task,
+graphics, audio, file and network service paths without game media or
+port-specific source kits. Port-specific recipes and source kits belong to the
+separate Ports checkout.
 
 ## Earlier service transport tests
 
@@ -396,7 +392,7 @@ it cannot install shader strings or construct raw pipeline descriptors.
 Operation 123 adds per-draw normalized blend constants and an 8-bit stencil
 reference. Draw validation rejects incompatible attachment/pipeline depth
 formats and counts that do not form the selected primitive list. Point size
-remains the standard single-pixel point; larger Xbox point coverage needs a
+remains the standard single-pixel point; larger native platform point coverage needs a
 qualified port-side expansion, not an implied point-size feature.
 
 Owned sampler IDs (122/104) independently select min/mag/mipmap filtering,
@@ -432,7 +428,7 @@ reference at most 1,048,576 indices in total, so a small repeated draw record
 cannot amplify owner-thread validation into unbounded work. Ports can split
 larger batches into ordered retained passes without clearing their attachments.
 Index and uniform CPU shadows are charged; vertex buffers charge a compact
-per-float NaN bitmap used by typed NVI1 templates. This is a per-request work
+per-float NaN bitmap used by typed typed template templates. This is a per-request work
 bound, not a resolution cap, FPS cap or instruction meter.
 
 Visibility is a real occlusion query, not a visibility guess. At most 64 query
@@ -457,7 +453,7 @@ bootstrap inputs remain host-verified WGSL, fixed vertex layout, blend/cull/dept
 state and bounded texture bindings; game requests select only installed indices.
 `Pipeline::identity()` hashes exact programs, entry points, layout, uniform policy
 and render state; `Graphics::pipeline_hashes()` preserves index order and includes
-the host sample count. [NVI1](NVI1.md) is the coordinated, bounded data representation
+the host sample count. the typed template contract is the coordinated, bounded data representation
 for signed vertex/combiner templates. UniformPolicy::Nv2aV1 enforces its exact
 layout and validates every referenced block before a frame is submitted. Cache
 entries are invalidated by buffer edits. Supplied NaNs in its constants or typed
@@ -631,7 +627,7 @@ including after rename/unlink. The timestamp is signed floor seconds since
 precision is preserved, not improved. Unsupported timestamp facilities/ranges
 return Unsupported. These are filesystem times for save recovery ordering, not
 monotonic deadlines or a transaction/version guarantee. No physical path, file
-identity, owner, or other host metadata is exposed. Burnout's port-side saveguard
+identity, owner, or other host metadata is exposed. the native title's port-side saveguard
 still owns pending-save recovery, history and retry policy; these operations do
 not implement it in trusted host code.
 Games discover only their supplied grants through operation 13. ROM grants
@@ -731,7 +727,7 @@ the connection before allocation.
 | 123 state pass | target u64, query u64 (0 none), mask/clear/depth/count as 108, state draws | empty |
 | 124 surface readback start | target u64, x/y/width/height u32 | readback ticket u64 |
 | 125 readback poll | ticket u64 | packed RGBA8 bytes; success consumes ticket |
-| 126 NVI1 structural check | cube-slot mask u32 (bits 0..3), exactly 13,072 bytes | empty; Invalid or Unsupported on rejection |
+| 126 typed template structural check | cube-slot mask u32 (bits 0..3), exactly 13,072 bytes | empty; Invalid or Unsupported on rejection |
 | 127 prepare state variant | verified template index u32, 27 state words described below | opaque variant ID u64 |
 | 128 variant poll | variant ID u64 | exact template/state/sample SHA-256 bytes (32); Busy/Failed otherwise |
 
@@ -911,7 +907,7 @@ exited and cannot receive this stage as a writable mount. Permission bits alone
 are not process isolation. The caller must also pin compiler configuration and
 toolchain dependencies, prohibit post-audit LTO/additional game archives and
 bind this receipt to the final executable's integrity receipt. These helpers
-are **not** a working Takedawn builder, do not consume a new canonical engine
+are **not** a working Port builder, do not consume a new canonical engine
 snapshot automatically and do not enable a profile. A receipt's presence alone
 never grants executable admission.
 
@@ -952,7 +948,7 @@ Maintainer checks (no Python or extra library required by players):
 
 ```sh
 cargo test --offline --features gui --lib port_host::
-cargo test --offline --features gui --lib gui::cube2_input::
+cargo test --offline --features gui --lib gui::port_input::
 cargo test --offline --test port_services
 cargo test --offline --test port_services -- --ignored
 rustc --edition=2021 --test engines/native-services/client.rs -o /tmp/port-client-tests
@@ -978,7 +974,7 @@ It requires installed 32-bit Rust std and matching C libraries. Set
 compiler lacks those libraries; no global toolchain changes are required.
 
 
-## Halo extensions and reviewed native launch (2026-11-14)
+## native port extensions and reviewed native launch (2026-11-14)
 
 These additions retain GPH1 ABI 1. Older SDKs return Unsupported.
 Infrastructure availability does **not** enable any legacy engine profile.
@@ -1016,7 +1012,7 @@ also rejects values that cannot fit the compiler host's architecture. The Plan
 identity and executable receipt bind the exact choice. Packages and creators
 cannot select it through their manifest or source. Linux enforces an inherited
 per-process address-space limit; Windows enforces the owned compiler job's
-committed-memory limit. The large Takedawn maintainer fixture explicitly uses
+committed-memory limit. The large Port maintainer fixture explicitly uses
 8 GiB on a 64-bit compiler host after the 4 GiB build failed with allocation
 exhaustion. This is not a game memory grant or an admission exemption.
 
@@ -1095,7 +1091,7 @@ media (8 MiB) and diagnostics (2 MiB) against the signed hard limit. These are
 managed resource ledgers,
 not a claim to measure total driver/kernel/GUI RSS. The low-level host APIs must
 also be supplied a reviewed budget by their caller. Ordinary manifest limits
-remain unchanged; adding native Halo layouts does not bypass them.
+remain unchanged; adding native native port layouts does not bypass them.
 
 ### Child-local runtime, separate ABI namespace
 
@@ -1113,11 +1109,11 @@ bounded to 1 MiB. The separate opaque-window copy operation moves at most
 64 MiB without transferring the payload through the ABI. Mapping access,
 copy, protection and destruction share a lock.
 
-The reviewed `LocalLayout::TakedawnMemory` build preset supplies three separate
+The reviewed `LocalLayout::NativeMemory` build preset supplies three separate
 opaque backing windows, in listing order: main RAM 64 MiB, contiguous RAM
-64 MiB, and flash 1 MiB. The existing `TakedawnRam` preset still supplies only
+64 MiB, and flash 1 MiB. The existing `NativeRam` preset still supplies only
 one 64 MiB window. Both work on the four x86/x86_64 Linux/Windows build targets;
-they do not require the i686-only fixed guest-address Halo presets. The native
+they do not require the i686-only fixed guest-address native port presets. The native
 bootstrap reserves these banks at host-selected internal addresses before game
 entry. All pages initially remain inaccessible. Local op 1 returns only IDs and
 lengths; commit/protect/decommit and copied transfers retain their existing
@@ -1132,7 +1128,7 @@ mapping or authority is needed. The port's existing 32-span ceiling is not
 increased. There is no GPU/audio/input register aperture, arbitrary mapping,
 executable page, BIOS image, device model or successful unmapped-device fallback
 in this preset. A device address is not a window ID. This is CPU-memory backing
-only, not qualification of complete Xbox memory/device behavior or title startup.
+only, not qualification of complete native platform memory/device behavior or title startup.
 
 `Plan` identity includes the chosen preset; SDK identity includes its reviewed
 bootstrap implementation. Existing executable receipts therefore require the
@@ -1201,11 +1197,11 @@ up front, even when no mailboxes are created. Atomic copied records additionally
 reserve 64 KiB of payload plus 8 KiB of bookkeeping at runtime creation. The generated
 bootstrap currently reserves a 1 GiB local ledger with up to 32 one-MiB stacks;
 the outer signed process limit must independently accommodate its chosen layout.
-Halo's Xbox window is 0x80000000 + 0x20000000 bytes; optional Custom Edition
+native port's native platform window is 0x80000000 + 0x20000000 bytes; optional Custom Edition
 window is 0x40440000 + 0x01700000 bytes. The latter is an explicit host Plan,
 not an arbitrary game address request.
 
-`LocalLayout::TakedawnRam` reserves one 64 MiB window at the host-selected
+`LocalLayout::NativeRam` reserves one 64 MiB window at the host-selected
 0x20000000 backing address, on all four native targets. This matches the pinned
 kit's physical RAM size, not the total game/process memory ceiling. It is
 initially inaccessible and non-executable; the reviewed loader must commit
@@ -1213,7 +1209,7 @@ pages before access. Only its opaque ID and size reach game code. Port-owned
 safe code translates guest addresses and explicit RAM mirrors into checked
 offsets, rather than forming native pointers. Reservation collisions fail and
 the allocation participates in the existing ledger, process ceiling, SDK and
-Plan receipt identities. This preset neither enables Burnout nor grants device,
+Plan receipt identities. This preset neither enables the native title nor grants device,
 file, network, display or executable-page access.
 
 All fields below are LE, with exact request length and the normal negative
@@ -1441,7 +1437,7 @@ before submission; malformed viewports cannot partially draw or clear a target.
 Operation **135** extends the 36-byte 122 sampler descriptor with a border-color
 u32: 0 transparent black, 1 opaque black, 2 opaque white. Address mode 3 is
 ClampToBorder on any of U/V/W. This requires the real Vulkan device feature;
-otherwise Unsupported. Other colors/modes are rejected. Arbitrary Halo ARGB
+otherwise Unsupported. Other colors/modes are rejected. Arbitrary native port ARGB
 border colors are **not** implemented or approximated by clamp-to-edge. They
 require a precise port-side template transformation with filter/mip/cube edge
 differential tests, or a reviewed generic extension before enabling affected
@@ -1450,13 +1446,13 @@ content. Do not silently discard that state.
 RGBA8 color, existing depth/stencil formats, MSAA, cube/mip, readback, copy and
 synchronization contracts above remain unchanged. Other renderer formats,
 depth resolves, volume textures and coherence patterns need an actual port use
-inventory and exact qualification; NVI1 validation is not an execution proof.
+inventory and exact qualification; typed template validation is not an execution proof.
 
 Both pinned Slang backends now complete conversion into validated WGSL. The
 reviewed Naga patch implements f32 scalar/vector NaN/Inf classification using
 integer bit masks, then reparses/validates the writer output. Precise FP stays
 fixed; no approximate comparison or backend fallback is used. These synthetic
-checks do not qualify Halo NV2A translation, SMAA, sharpening or whole scenes.
+checks do not qualify native port NV2A translation, SMAA, sharpening or whole scenes.
 
 ### Persistent save quota and interface discovery
 
@@ -1496,7 +1492,7 @@ Insufficient reply capacity/malformed requests fail without a partial snapshot.
 Games can bind existing UDP to a discovered address or use connected UDP plus
 local-address query to discover a selected route without sending a packet.
 
-OpenCE's SSDP/UPnP XML/HTTP and mapping renewal/removal remain game logic. Existing
+Port-specific SSDP/UPnP XML/HTTP and mapping renewal/removal remain game logic. Existing
 bound UDP, send-to/receive-from and TCP can carry discovery and router HTTP; the
 HTTPS helper deliberately does not downgrade to HTTP. Raw sockets, interface
 configuration, multicast membership/TTL control and arbitrary socket options are
@@ -1524,7 +1520,7 @@ generic capability as permission to expose a shared-memory pointer to game code.
 Interface snapshots share the eight-per-second network acquisition budget and return Busy when exhausted. This prevents repeated discovery from creating unbounded host work.
 
 
-The pinned Halo inspection confirms GL_RGBA16F HDR back buffers/tone mapping,
+The pinned native port inspection confirms GL_RGBA16F HDR back buffers/tone mapping,
 3D texture uploads, depth+stencil MSAA blits and sampler LOD bias. These are
 remaining host/template contracts, not features covered by existing RGBA8,
 D2/cube and color-copy APIs.
@@ -1546,10 +1542,10 @@ the auditor directory. The cache/receipt binds DLL identities as well as nm.
 Neither PATH-provided DLLs nor an unrelated MinGW install are prerequisites.
 
 
-The i686 Halo layout requires a large-address-aware PE and user address space
+The i686 native port layout requires a large-address-aware PE and user address space
 above 2 GiB. It cannot fit a default 2 GiB-only 32-bit Windows process. Actual
 32-bit GNU PE fixtures carry LAA and pass fixed-window tests under isolated Wine;
-this is not real Windows operating-system or Halo gameplay qualification.
+this is not real Windows operating-system or native port gameplay qualification.
 
 ## Bounded session diagnostics
 
@@ -1905,7 +1901,7 @@ not updated by this component checkpoint.
 
 The exact port contracts, record layout, literal hook signatures, partial-error
 semantics and bounded abort cleanup are in the ports
-`host-integration/engines/takedawn/service-kernel-irql/README.md`. Cross-down must
+`host-integration/engines/port/service-kernel-irql/README.md`. Cross-down must
 run the old-level safe point while gated, drop counted ownership, unlock, then
 publish the new guest PCR byte before the deferred release point. CLI and raised
 holds remain separate; enabling after STI requires the reviewed following-
@@ -1922,10 +1918,10 @@ from Windows component execution through Wine and cross-target compile/link
 checks. These are controlled callbacks, not real pending-device delivery,
 physical input, audible audio, hardware visuals, gameplay or measured pacing.
 
-Do not enable Burnout from these results. Real pending IRQ/safe/release hooks,
+Do not enable the native title from these results. Real pending IRQ/safe/release hooks,
 native finite handler routes, worker stacks, timer/DPC integration, original
 diagnostics, full renderer/media/bootstrap/launcher wiring and complete title
-qualification remain required. Halo also remains blocked until its own migrated
+qualification remain required. native port also remains blocked until its own migrated
 source and runtime pass admission. This component does not consume the old
 legacy direct-service path or change either profile gate.
 
@@ -1982,7 +1978,7 @@ worker stack release/close and IRQ active/pending/close now retry bounded existi
 records without allocating events. Generic event availability after cancellation
 was not the issue. SDK sync/record/task limits, compiler budgets, no-post-audit
 LTO, source/dependency/import checks and process confinement remain unchanged.
-Long-wait diagnostics explicitly preserve original signed32 Xbox/Windows LONG
+Long-wait diagnostics explicitly preserve original signed32 native platform/Windows LONG
 conversion across targets, avoiding Linux64's narrowing of wider-long comparisons;
 this adds no gameplay duration limit or arbitrary wait rejection.
 
@@ -2156,8 +2152,8 @@ components. Timer/event adapters and full native source closure remain required.
 ## Port-side timer, shadow-map and event coordination
 
 The reviewed ports branch now contains the checked
-[timer table](https://github.com/centrexity/GamePKG_Ports/blob/58f303b/host-integration/engines/takedawn/service-kernel-timers/README.md)
-and [shadow/event adapters](https://github.com/centrexity/GamePKG_Ports/blob/e1c43c0/host-integration/engines/takedawn/service-kernel-shadow/README.md).
+[timer table](https://github.com/centrexity/GamePKG_Ports/blob/58f303b/host-integration/engines/port/service-kernel-timers/README.md)
+and [shadow/event adapters](https://github.com/centrexity/GamePKG_Ports/blob/e1c43c0/host-integration/engines/port/service-kernel-shadow/README.md).
 These are **game sources**, not trusted host implementations or profile
 exemptions. They use existing local records, typed mutexes/events, reviewed
 workers and checked guest memory. SDK/binary identity and the pinned ports
@@ -2193,7 +2189,7 @@ remain rejected pending full source/service/builder/launcher closure.
 ## Native timer firing composition checkpoint
 
 The ports branch now provides
-[`timer_fire_pass`](https://github.com/centrexity/GamePKG_Ports/blob/b5e1a04/host-integration/engines/takedawn/service-kernel-timers/FIRING.md)
+[`timer_fire_pass`](https://github.com/centrexity/GamePKG_Ports/blob/b5e1a04/host-integration/engines/port/service-kernel-timers/FIRING.md)
 as checked game code, composing the existing timer scan, native DPC calling
 convention and typed event shadows. It verifies the same queue/actual worker
 before mutation, runs callbacks after slot publication/unlock, and resolves the
@@ -2603,8 +2599,8 @@ version counter: callers needing ABA detection must compare a nonwrapping
 version in their own copied format. It neither waits for a deadline nor blocks
 the application's window owner; execution is inside the confined child.
 
-The opt-in **host-only** `LocalLayout::TakedawnServices` preset provides the same
-main 64 MiB/contiguous 64 MiB/flash 1 MiB windows as `TakedawnMemory`, followed
+The opt-in **host-only** `LocalLayout::NativeServices` preset provides the same
+main 64 MiB/contiguous 64 MiB/flash 1 MiB windows as `NativeMemory`, followed
 by a separate 1 MiB scratch window. All four reservations and per-page metadata
 are charged before entry. Old presets and guest aliases are unchanged. A reviewed
 port must explicitly consume the fourth descriptor and keep its scratch backing
@@ -2704,7 +2700,7 @@ then clears the slot. Retry tolerates a missing record only after that explicit
 retirement journal. Exact LE formats and cleanup obligations are documented in
 ports `service-kernel-events/README.md`. These copied records are not immutable
 native authority or joined-task proof; callers must stop/actually join borrowers.
-This is one bounded SDK wait, not a completed Xbox timeout/alert/pulse translator.
+This is one bounded SDK wait, not a completed native platform timeout/alert/pulse translator.
 
 The full event suite passes four-target native SDK execution (Windows through
 Wine), ten interference cases per target, fourteen required-failing native copies,
@@ -2794,7 +2790,7 @@ stay blocked. The installed CLI/GUI already supply the matching host SDK.
 
 ## Counted child-local semaphores
 
-The reviewed Takedawn source requires counted semaphores for NtCreateSemaphore
+The reviewed Port source requires counted semaphores for NtCreateSemaphore
 and NtReleaseSemaphore. Events cannot substitute for counts. The shared child
 runtime now supplies generic typed semaphores, with no game engine logic in the
 host. This does **not** implement those NT imports, their tagged ownership,
@@ -2874,7 +2870,7 @@ and authenticated KIC3 image startup are requalified against the changed SDK.
 No physical controls, audible audio, rendered game frames or frame pacing are
 established. The main KIC3 import gap remains **104**; native titles stay blocked.
 
-### Checked Takedawn consumer checkpoint: counted ownership and KIC4
+### Checked Port consumer checkpoint: counted ownership and KIC4
 
 The reviewed ports feature branch adds untrusted, dependency-free `Semaphores`,
 `SemaphoreCreation` and `SemaphoreWait` over SDK ops 43..46/25. SSD1 and SWL1 hold
@@ -2883,7 +2879,7 @@ shared HTR2 kind 3 distinguishes them from kind-1 events. The host SDK, quotas,
 installed identity and admission gates do not change for this port-only work.
 Exact game-owned contracts live in ports `service-kernel-semaphores/README.md`,
 `service-kernel-semaphore-imports/README.md` and
-`service-kernel-context/SYNC_STARTUP.md` under `host-integration/engines/takedawn`.
+`service-kernel-context/SYNC_STARTUP.md` under `host-integration/engines/port`.
 They are reviewed integration inputs, not trusted host implementation or an
 updated app submodule pin.
 
@@ -2900,7 +2896,7 @@ or excessive/nonpositive release on Linux is an explicit correction to the
 upstream POSIX shim's unchecked creation/clamping, not equivalence to that shim.
 Source hashes and comparison limits are pinned in the ports witnesses.
 Authenticated private-image startup still refuses 102 remaining main imports;
-KIC3 refuses 104. Neither Burnout nor Halo is enabled by this checkpoint. Complete
+KIC3 refuses 104. Neither the native title nor native port is enabled by this checkpoint. Complete
 generated-source admission, NT close/waits and other adapters, native entry/loop,
 renderer/media, builders/launchers and actual gameplay qualification remain.
 
@@ -3004,12 +3000,12 @@ The contract follows [Windows multiple-object acquisition rules](https://learn.m
 NT game policy remains in the reviewed port.
 
 
-### Takedawn checked RTL consumer checkpoint
+### Port checked RTL consumer checkpoint
 
 The independent ports feature branch now supplies dependency-free checked-memory
 adapters for actual imports 269/279/289/290/301. Their exact argument, CPU,
 byte-order, C-locale folding, NUL, length-wrap, accepted-write-prefix and fault
-contracts are documented in the independent ports [RTL contract](https://github.com/centrexity/GamePKG_Ports/blob/feature/takedawn-shared-services/host-integration/engines/takedawn/service-kernel-rtl/README.md). These are game
+contracts are documented in the independent ports [RTL contract](https://github.com/centrexity/GamePKG_Ports/blob/feature/port-shared-services/host-integration/engines/port/service-kernel-rtl/README.md). These are game
 code, not a new trusted host layer. They use the existing SDK identity
 `9801f83896bc4dc53f135f9fe169f27305323fe82f1b8fae5f578092792745d8`.
 
@@ -3025,9 +3021,9 @@ original graphics or measured frame pacing. Existing local SDK installation
 needs no rebuild for this port-only adapter batch.
 
 
-### Takedawn combined event/semaphore ownership checkpoint
+### Port combined event/semaphore ownership checkpoint
 
-The independent ports [mixed-owner contract](https://github.com/centrexity/GamePKG_Ports/blob/feature/takedawn-shared-services/host-integration/engines/takedawn/service-kernel-mixed-waits/README.md)
+The independent ports [mixed-owner contract](https://github.com/centrexity/GamePKG_Ports/blob/feature/port-shared-services/host-integration/engines/port/service-kernel-mixed-waits/README.md)
 now defines a checked EVD2/SSD1 transaction over existing op 47. It validates the
 complete typed tag array, retains every participant before releasing its table
 guard, performs one atomic all/any acquisition and preserves native outcomes
@@ -3052,7 +3048,7 @@ components/Wine, confined Linux startup and Windows artifact checks establish no
 physical controls, audible sound, original rendering or measured frame pacing.
 
 
-### Takedawn retained logical-wait consumer
+### Port retained logical-wait consumer
 
 The independent mixed-owner API adds `mixed_wait_slice(&mut self,&Memory,all,ms)`
 and `mixed_wait_timeout(&mut self,&Memory) -> Result<(),i32>` over unchanged
@@ -3141,8 +3137,8 @@ The checked port still needs real typed mutex/file/thread ownership and NT/APC
 integration. Toolkit mutant bridges are 192/221, but the current private main
 import table does not import those two directly; required waits 233/234 remain
 pending. This host prerequisite does not implement those imports, change the
-98-pending KIC4 result, migrate a full renderer/media/launcher, or enable Burnout
-or Halo. Prioritize demonstrated active paths when completing the port adapters.
+98-pending KIC4 result, migrate a full renderer/media/launcher, or enable the native title
+or native port. Prioritize demonstrated active paths when completing the port adapters.
 
 The independent checked EVD2/SSD1 consumers now use typed op 49 for retiring
 journal-owned IDs. Their new creator-cancellation regression reproduced the old
@@ -3162,7 +3158,7 @@ is not proof. This is maintainer tooling, not an end-user Python requirement or
 an admission alternative. The production builder still binds its actual compiled
 SDK and exact audited objects into receipts.
 
-### Checked Takedawn critical-section consumer (KIC5)
+### Checked Port critical-section consumer (KIC5)
 
 The independent ports integration adds dependency-free CSD1 critical-section
 owners and an explicit KIC5 startup path for active imports 291/277/294. It uses
@@ -3170,7 +3166,7 @@ the unchanged SDK `49a313ff062e83e3bcbaadb125f4ace190847b0321cc25877e45f92023f02
 actual child-local recursive mutex ownership/state, bounded waits, records and
 typed retirement. This is game compatibility code, not new trusted host code.
 See the ports repository's
-`host-integration/engines/takedawn/service-critical/README.md` for exact layouts,
+`host-integration/engines/port/service-critical/README.md` for exact layouts,
 retained creation/wait obligations, errors and qualification commands.
 
 The original shadow semantics leave guest critical-section bytes untouched,

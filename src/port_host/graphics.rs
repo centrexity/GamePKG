@@ -6,8 +6,6 @@ use std::collections::BTreeMap;
 use wgpu::util::DeviceExt;
 mod retained;
 mod state;
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-mod takedawn;
 #[cfg(any(windows, all(target_os = "linux", target_arch = "x86_64")))]
 mod textured;
 mod variants;
@@ -15,8 +13,6 @@ mod variants;
 mod verified;
 use retained::{Target, Visibility};
 pub use state::RasterState;
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-pub use takedawn::takedawn_nvi1_recipes;
 #[cfg(any(windows, all(target_os = "linux", target_arch = "x86_64")))]
 pub use textured::{
     textured_v1_recipe, textured_v1_shaders, textured_v2_recipe, textured_v2_shaders,

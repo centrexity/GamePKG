@@ -3,19 +3,6 @@ use anyhow::{ensure, Context, Result};
 use std::path::{Path, PathBuf};
 const SETUP: &str = "Install clang-18, lld-18, wasi-libc and libclang-rt-18-dev-wasm32, or set the C/WASI build tools folder in Settings";
 
-pub(crate) fn resolve(overrides: &[&str]) -> Result<PathBuf> {
-    let explicit = overrides
-        .iter()
-        .find_map(std::env::var_os)
-        .map(PathBuf::from);
-    let settings = crate::settings::load()?;
-    tools_available()?;
-    select(
-        explicit,
-        &settings.wasi_sysroot_directory,
-        Path::new("/usr"),
-    )
-}
 #[cfg(feature = "gui")]
 pub(crate) fn check_draft(directory: &str) -> Result<PathBuf> {
     tools_available()?;

@@ -84,8 +84,7 @@ pub fn require_windows_compatibility(manifest: &crate::manifest::Manifest) -> Re
     );
     #[cfg(windows)]
     ensure!(
-        manifest.native_graphics.is_none()
-            || gamepkg_takedawn_windows_runner::supports_amd64_tools(),
+        manifest.native_graphics.is_none() || gamepkg_native_windows_runner::supports_amd64_tools(),
         "Windows indexed Slang requires AMD64 Windows; x86 GamePKG is supported under WOW64"
     );
     Ok(())
@@ -117,7 +116,7 @@ impl Drop for Permit {
 #[cfg(target_os = "linux")]
 type NativeChild = std::process::Child;
 #[cfg(windows)]
-type NativeChild = gamepkg_takedawn_windows_runner::Process;
+type NativeChild = gamepkg_native_windows_runner::Process;
 #[cfg(not(any(windows, target_os = "linux")))]
 type NativeChild = ();
 struct Reap {
@@ -177,9 +176,9 @@ pub struct Process {
     #[cfg(target_os = "linux")]
     child: Option<std::process::Child>,
     #[cfg(windows)]
-    child: Option<gamepkg_takedawn_windows_runner::Process>,
+    child: Option<gamepkg_native_windows_runner::Process>,
     #[cfg(windows)]
-    _sandbox: gamepkg_takedawn_windows_runner::Sandbox,
+    _sandbox: gamepkg_native_windows_runner::Sandbox,
     directory: Option<tempfile::TempDir>,
     log: Arc<Mutex<VecDeque<u8>>>,
     transport: Option<JoinHandle<std::io::Result<()>>>,
@@ -347,7 +346,7 @@ impl Process {
         }
         #[cfg(windows)]
         {
-            use gamepkg_takedawn_windows_runner::{Sandbox, WorkerProcess};
+            use gamepkg_native_windows_runner::{Sandbox, WorkerProcess};
             let identity = crate::verify::digest(directory.path().as_os_str().as_encoded_bytes());
             let sandbox = Sandbox::open(&format!("GamePKG.Services.{}", &identity[..32]))?;
             sandbox.grant_runtime(directory.path())?;
@@ -382,7 +381,7 @@ impl Process {
                 }
             });
             #[derive(Clone)]
-            struct Io(Arc<Mutex<gamepkg_takedawn_windows_runner::ServiceIo>>);
+            struct Io(Arc<Mutex<gamepkg_native_windows_runner::ServiceIo>>);
             impl Read for Io {
                 fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
                     self.0

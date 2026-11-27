@@ -98,9 +98,15 @@ mod tests {
     use super::*;
     #[test]
     fn disabled_packages_render_disabled_networking_without_creating_launch_drafts() {
-        let mut manifest =
-            crate::manifest::Manifest::parse(include_bytes!("../../ports/cube2/manifest.toml"))
-                .unwrap();
+        let mut manifest = crate::manifest::Manifest::parse(include_bytes!(
+            "../../examples/minimal/manifest.toml"
+        ))
+        .unwrap();
+        manifest.game_data = Some(crate::manifest::GameDataRequirement {
+            title: "Original data".into(),
+            user_selected_servers: true,
+            layouts: Vec::new(),
+        });
         manifest.permissions.network = false;
         let mut app = App {
             selected_game: Some(manifest.id.clone()),

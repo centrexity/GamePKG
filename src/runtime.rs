@@ -37,23 +37,15 @@ struct Data {
     audio_allowed: bool,
     effects: crate::audio_effects::Runtime,
     shader_count: usize,
-    zelda: Option<crate::zelda3::Zelda>,
-    doom: Option<crate::doom::Doom>,
-    deadline_epochs: u64,
     network: crate::network::Service,
 }
-pub use crate::zelda_snapshots::Snapshot as ZeldaSnapshot;
 pub struct Game {
-    zelda_snapshots: Option<crate::zelda_snapshots::Context>,
     queued_input: crate::input_events::Queue,
-    doom_events: Vec<crate::doom_input::Event>,
     progress: Option<crate::progress::Session>,
     store: Option<Store<Data>>,
     tick: Option<Tick>,
     #[cfg(all(test, any(target_os = "linux", windows)))]
     native: Option<crate::native::Session>,
-    #[cfg(target_os = "linux")]
-    cube2: Option<Box<crate::cube2::player::Player>>,
     deadline_epochs: u64,
     stop: Arc<AtomicBool>,
     pub state: u64,
@@ -63,8 +55,6 @@ pub struct Game {
     pub shader_sources: Vec<String>,
     uses_shaders: bool,
     pub audio_allowed: bool,
-    pub builtin_engine: bool,
-    pub doom_engine: bool,
 }
 impl Drop for Game {
     fn drop(&mut self) {
@@ -93,13 +83,6 @@ impl Game {
         crate::build_policy::require(manifest.builtin_engine.as_deref())?;
 
         settings.validate()?;
-        anyhow::ensure!(
-            !matches!(
-                manifest.builtin_engine.as_deref(),
-                Some(crate::cube2::PROFILE) | Some(crate::takedawn::PROFILE)
-            ),
-            "this engine can only run from its verified native cache"
-        );
         if !matches!(
             manifest.runtime_profile.as_str(),
             "core-v1" | "component-v1"
@@ -141,16 +124,10 @@ impl Game {
             if module.imports().any(|i| {
                 !matches!(i.ty(), wasmtime::ExternType::Func(_))
                     || i.module() != "gamepkg"
-                    || (i.name() == "zelda3_tick"
-                        && manifest.builtin_engine.as_deref() != Some(crate::zelda3::PROFILE))
-                    || (i.name() == "doom_tick"
-                        && manifest.builtin_engine.as_deref() != Some(crate::doom::PROFILE))
                     || !matches!(
                         i.name(),
                         "network_call"
                             | "effect_call"
-                            | "zelda3_tick"
-                            | "doom_tick"
                             | "asset_read"
                             | "rom_read"
                             | "rom_size"
@@ -194,9 +171,7 @@ impl Game {
                     "draw_shader" | "draw_shader_image" | "draw_shader_asset_image"
                 )
             });
-            let custom_renderer = module.imports().any(|i| {
-                i.name().starts_with("draw_") || matches!(i.name(), "zelda3_tick" | "doom_tick")
-            });
+            let custom_renderer = module.imports().any(|i| i.name().starts_with("draw_"));
             (uses_shaders, custom_renderer)
         } else {
             let mut uses_shaders = false;
@@ -276,17 +251,6 @@ impl Game {
             .hard_memory_bytes
             .min(settings.memory_ceiling_mib * 1048576);
         manifest.limits.ensure_render_memory(memory)?;
-        let memory = if let Some(profile) = manifest.builtin_engine.as_deref() {
-            let reserved = crate::builtin::memory(profile)?;
-            if memory < reserved + 16 * 1048576 {
-                bail!("builtin engine exceeds the selected memory ceiling");
-            }
-            memory - reserved
-        } else {
-            memory
-        };
-
-        let memory = crate::zelda_snapshots::guest_memory(manifest, memory)?;
         let (effects, memory) = crate::audio_effects::Runtime::new(
             package.as_ref(),
             manifest.limits.effects_memory_bytes,
@@ -330,9 +294,6 @@ impl Game {
                 audio_allowed: manifest.permissions.audio,
                 effects,
                 shader_count: 0,
-                zelda: None,
-                doom: None,
-                deadline_epochs,
             },
         );
         store.limiter(|s| &mut s.limits);
@@ -355,12 +316,6 @@ impl Game {
                 return Ok(Tick::Component(tick));
             }
             let mut linker = Linker::new(&engine);
-            if manifest.builtin_engine.as_deref() == Some(crate::zelda3::PROFILE) {
-                linker.func_wrap("gamepkg", "zelda3_tick", zelda3_tick)?;
-            }
-            if manifest.builtin_engine.as_deref() == Some(crate::doom::PROFILE) {
-                linker.func_wrap("gamepkg", "doom_tick", doom_tick)?;
-            }
             linker.func_wrap(
                 "gamepkg",
                 "achievement_unlock",
@@ -825,16 +780,12 @@ impl Game {
             }
         };
         Ok(Self {
-            zelda_snapshots: crate::zelda_snapshots::Context::new(manifest)?,
-            doom_events: Vec::new(),
             queued_input: crate::input_events::Queue::new(manifest.permissions.input),
             progress: None,
             store: Some(store),
             tick: Some(tick),
             #[cfg(all(test, any(target_os = "linux", windows)))]
             native: None,
-            #[cfg(target_os = "linux")]
-            cube2: None,
             deadline_epochs,
             stop,
             state: 0,
@@ -844,8 +795,6 @@ impl Game {
             shader_sources: Vec::new(),
             uses_shaders,
             audio_allowed: manifest.permissions.audio,
-            builtin_engine: manifest.builtin_engine.is_some(),
-            doom_engine: manifest.builtin_engine.as_deref() == Some(crate::doom::PROFILE),
         })
     }
     pub fn load(root: &Path, id: &str) -> Result<Self> {
@@ -886,6 +835,7 @@ impl Game {
     ) -> Result<Self> {
         let _build_read = crate::build::BuildChange::read(root, id)?;
         let verified = crate::registry::installed_verified(root, id)?;
+        #[cfg_attr(not(test), allow(unused_mut))]
         let mut package = verified.package;
         let _snapshot = verified.snapshot;
         let package_digest = verified.identity.archive_digest;
@@ -895,63 +845,6 @@ impl Game {
             !manifest.uses_service_runtime(),
             "this game runs separately through the native Play action or gamepkg run"
         );
-        anyhow::ensure!(
-            manifest.builtin_engine.as_deref() != Some(crate::takedawn::PROFILE),
-            "Takedawn runs in its own native window; use the desktop Play action or gamepkg run"
-        );
-        package.resolve_shared_assets(root)?;
-        if manifest.builtin_engine.as_deref() == Some(crate::cube2::PROFILE) {
-            anyhow::ensure!(
-                rom_paths.is_empty(),
-                "Cube 2 uses its original game-data folder rather than ROM file arguments"
-            );
-            anyhow::ensure!(
-                native != Some(false),
-                "Cube 2 uses the native Build and Play actions; Wasm export is unavailable"
-            );
-            #[cfg(not(target_os = "linux"))]
-            bail!("Cube 2 native process isolation is currently available on Linux");
-            #[cfg(target_os = "linux")]
-            {
-                let settings = match configured {
-                    Some(settings) => settings.clone(),
-                    None => crate::settings::load()?,
-                };
-                let player = crate::cube2::player::Player::load(
-                    root,
-                    &manifest,
-                    &package_digest,
-                    &settings,
-                )?;
-                return Ok(Self {
-                    zelda_snapshots: None,
-                    doom_events: Vec::new(),
-                    queued_input: crate::input_events::Queue::new(manifest.permissions.input),
-                    progress: Some(crate::progress::Session::open(
-                        root,
-                        &manifest.id,
-                        &manifest.creator_key,
-                    )?),
-                    store: None,
-                    tick: None,
-                    #[cfg(test)]
-                    native: None,
-                    cube2: Some(Box::new(player)),
-                    deadline_epochs: 0,
-                    stop: Arc::new(AtomicBool::new(false)),
-                    state: 0,
-                    id: manifest.id.clone(),
-                    input_allowed: true,
-                    custom_renderer: true,
-                    shader_sources: Vec::new(),
-                    uses_shaders: false,
-                    audio_allowed: true,
-                    builtin_engine: true,
-                    doom_engine: false,
-                });
-            }
-        }
-
         let cache = root.join("builds").join(&package_digest).join("game.wasm");
         if rom_paths.len() != manifest.required_rom_count() {
             bail!(
@@ -978,17 +871,13 @@ impl Game {
         let rom = if rom_paths.is_empty() {
             None
         } else {
-            Some(crate::files::RomSet::open(
-                rom_paths,
-                capacity,
-                manifest.builtin_engine.is_some(),
-            )?)
+            Some(crate::files::RomSet::open(rom_paths, capacity)?)
         };
         #[cfg(all(test, any(target_os = "linux", windows)))]
         if native {
             {
                 let mut uses_shaders = false;
-                let mut custom_renderer = manifest.builtin_engine.is_some();
+                let mut custom_renderer = false;
                 for name in package
                     .entries
                     .keys()
@@ -1021,8 +910,6 @@ impl Game {
                     shader_sources.len(),
                 )?;
                 return Ok(Self {
-                    zelda_snapshots: crate::zelda_snapshots::Context::new(&manifest)?,
-                    doom_events: Vec::new(),
                     queued_input: crate::input_events::Queue::new(manifest.permissions.input),
                     progress: Some(crate::progress::Session::open(
                         root,
@@ -1032,8 +919,6 @@ impl Game {
                     store: None,
                     tick: None,
                     native: Some(session),
-                    #[cfg(target_os = "linux")]
-                    cube2: None,
                     deadline_epochs: 0,
                     stop: Arc::new(AtomicBool::new(false)),
                     state: 0,
@@ -1043,8 +928,6 @@ impl Game {
                     shader_sources,
                     uses_shaders,
                     audio_allowed: manifest.permissions.audio,
-                    builtin_engine: manifest.builtin_engine.is_some(),
-                    doom_engine: manifest.builtin_engine.as_deref() == Some(crate::doom::PROFILE),
                 });
             }
         }
@@ -1064,58 +947,6 @@ impl Game {
                 None
             },
         )?;
-        if manifest.builtin_engine.as_deref() == Some(crate::zelda3::PROFILE) {
-            let path = cache.with_file_name("zelda3.wasm");
-            let bytes = crate::files::read_regular(&path, 32 * 1048576, false)
-                .context("rebuild the pinned Zelda3 engine before playing")?;
-            crate::integrity::verify_build(&path, &bytes)?;
-            let data = game.store.as_ref().unwrap().data();
-            let rom = data
-                .rom
-                .as_ref()
-                .and_then(crate::files::RomSet::snapshots)
-                .and_then(|roms| roms.first())
-                .context("select your Zelda3 ROM")?;
-            let save = data.save.as_ref().map(|s| s.bytes.as_slice());
-            let zelda = crate::zelda3::Zelda::new(
-                game.store.as_ref().unwrap().engine(),
-                &bytes,
-                rom,
-                save,
-                game.deadline_epochs,
-                crate::video_selections::effective(root, &manifest)?,
-            )?;
-            game.store.as_mut().unwrap().data_mut().zelda = Some(zelda);
-        }
-        if manifest.builtin_engine.as_deref() == Some(crate::doom::PROFILE) {
-            let path = cache.with_file_name("doom.wasm");
-            let bytes = crate::files::read_regular(&path, 32 * 1048576, false)
-                .context("rebuild the pinned DOOM engine before playing")?;
-            crate::integrity::verify_build(&path, &bytes)?;
-            let data = game.store.as_ref().unwrap().data();
-            let wad = data
-                .rom
-                .as_ref()
-                .and_then(crate::files::RomSet::snapshots)
-                .and_then(|roms| roms.first())
-                .context("select your DOOM WAD")?;
-            let save = data.save.as_ref().map(|s| s.bytes.as_slice());
-            let patches = &data
-                .rom
-                .as_ref()
-                .and_then(crate::files::RomSet::snapshots)
-                .context("select your DOOM WAD")?[1..];
-            let doom = crate::doom::Doom::new(
-                game.store.as_ref().unwrap().engine(),
-                &bytes,
-                wad,
-                patches,
-                &manifest.doom_wad_modes,
-                save,
-                game.deadline_epochs,
-            )?;
-            game.store.as_mut().unwrap().data_mut().doom = Some(doom);
-        }
         if game.uses_shaders {
             game.shader_sources =
                 crate::shaders::load_desktop_sources(root, &package_digest, &manifest, &settings)?;
@@ -1128,249 +959,20 @@ impl Game {
         )?);
         Ok(game)
     }
-    /// Capture without advancing a game tick. The buffer counts against the game's ceiling.
-    pub fn capture_zelda_snapshot(&mut self) -> Result<ZeldaSnapshot> {
-        let context = self
-            .zelda_snapshots
-            .as_ref()
-            .context("this game does not support Zelda snapshots")?;
-        let _scratch = context.scratch()?;
-        let mut snapshot = context.allocate(self.state)?;
-        #[cfg(all(test, any(target_os = "linux", windows)))]
-        if let Some(native) = &mut self.native {
-            native.capture_snapshot(&mut snapshot.bytes)?;
-            return Ok(snapshot);
-        }
-        self.store
-            .as_mut()
-            .and_then(|s| s.data_mut().zelda.as_mut())
-            .context("Zelda engine is unavailable")?
-            .capture_snapshot(&mut snapshot.bytes, self.deadline_epochs)?;
-        Ok(snapshot)
-    }
-    pub fn supports_zelda_snapshot_slots(&self) -> bool {
-        self.zelda_snapshots.is_some()
-    }
-    /// Save a host-selected slot (0..20); game source cannot choose its path.
-    pub fn save_zelda_slot(&mut self, root: &Path, slot: u8) -> Result<()> {
-        anyhow::ensure!(slot < 20, "snapshot slot must be between 1 and 20");
-        let snapshot = self.capture_zelda_snapshot()?;
-        self.zelda_snapshots
-            .as_ref()
-            .unwrap()
-            .write_slot(root, slot, &snapshot)
-    }
-    /// Read a bounded, creator/game/schema-scoped slot and restore it.
-    pub fn load_zelda_slot(&mut self, root: &Path, slot: u8) -> Result<()> {
-        let snapshot = self
-            .zelda_snapshots
-            .as_ref()
-            .context("this game does not support Zelda snapshot slots")?
-            .read_slot(root, slot)?;
-        self.restore_zelda_snapshot(&snapshot)
-    }
-    /// Restore the engine and its wrapper counter together, preventing a first-tick reset.
-    pub fn restore_zelda_snapshot(&mut self, snapshot: &ZeldaSnapshot) -> Result<()> {
-        let context = self
-            .zelda_snapshots
-            .as_ref()
-            .context("this game does not support Zelda snapshots")?;
-        let _incoming = context.incoming(snapshot)?;
-        let _scratch = context.scratch()?;
-        #[cfg(all(test, any(target_os = "linux", windows)))]
-        if let Some(native) = &mut self.native {
-            native.restore_snapshot(&snapshot.bytes)?;
-            self.state = snapshot.state;
-            return Ok(());
-        }
-        self.store
-            .as_mut()
-            .and_then(|s| s.data_mut().zelda.as_mut())
-            .context("Zelda engine is unavailable")?
-            .restore_snapshot(&snapshot.bytes, self.deadline_epochs)?;
-        let data = self.store.as_mut().unwrap().data_mut();
-        data.frame.reset();
-        data.audio.clear();
-        self.state = snapshot.state;
-        Ok(())
-    }
-    pub fn is_cube2(&self) -> bool {
-        #[cfg(target_os = "linux")]
-        {
-            self.cube2.is_some()
-        }
-        #[cfg(not(target_os = "linux"))]
-        {
-            false
-        }
-    }
-    pub fn cube2_resize(&mut self, width: u32, height: u32) {
-        #[cfg(target_os = "linux")]
-        if let Some(cube) = &mut self.cube2 {
-            cube.resize(width, height);
-        }
-        #[cfg(not(target_os = "linux"))]
-        let _ = (width, height);
-    }
-    pub fn cube2_frame_size(&self) -> Option<(u32, u32)> {
-        #[cfg(target_os = "linux")]
-        if let Some(cube) = &self.cube2 {
-            return Some(cube.frame_size);
-        }
-        None
-    }
-    pub fn cube2_desktop_input(&mut self, buttons: u32, dx: i32, dy: i32) {
-        #[cfg(target_os = "linux")]
-        if let Some(cube) = &mut self.cube2 {
-            cube.desktop(buttons, dx, dy);
-        }
-        #[cfg(not(target_os = "linux"))]
-        let _ = (buttons, dx, dy);
-    }
-    pub fn cube2_clear_input(&mut self) {
-        #[cfg(target_os = "linux")]
-        if let Some(cube) = &mut self.cube2 {
-            cube.clear_input();
-        }
-    }
     /// Let a reviewed native engine progress independently of a UI render loop.
     pub fn background_player(&mut self) -> Result<()> {
-        #[cfg(target_os = "linux")]
-        if let Some(cube) = &mut self.cube2 {
-            cube.background(self.progress.take())?;
-        }
         Ok(())
     }
-    #[cfg(all(feature = "audio", feature = "gui"))]
-    pub(crate) fn cube2_audio_sink(&self, sink: Option<crate::audio::Sink>) {
-        #[cfg(target_os = "linux")]
-        if let Some(cube) = &self.cube2 {
-            cube.audio_sink(sink);
-        }
-        #[cfg(not(target_os = "linux"))]
-        let _ = sink;
-    }
-    pub fn cube2_key(&mut self, scancode: u32, pressed: bool, repeat: bool, modifiers: u32) {
-        #[cfg(target_os = "linux")]
-        if let Some(cube) = &mut self.cube2 {
-            cube.key(scancode, pressed, repeat, modifiers);
-        }
-        #[cfg(not(target_os = "linux"))]
-        let _ = (scancode, pressed, repeat, modifiers);
-    }
-    pub fn cube2_text(&mut self, text: &str) {
-        #[cfg(target_os = "linux")]
-        if let Some(cube) = &mut self.cube2 {
-            cube.text(text);
-        }
-        #[cfg(not(target_os = "linux"))]
-        let _ = text;
-    }
-    pub fn cube2_modifiers(&mut self, modifiers: u32) {
-        #[cfg(target_os = "linux")]
-        if let Some(cube) = &mut self.cube2 {
-            cube.modifiers(modifiers);
-        }
-        #[cfg(not(target_os = "linux"))]
-        let _ = modifiers;
-    }
-    pub fn cube2_mouse_button(&mut self, button: u32, pressed: bool, modifiers: u32) {
-        #[cfg(target_os = "linux")]
-        if let Some(cube) = &mut self.cube2 {
-            cube.mouse_button(button, pressed, modifiers);
-        }
-        #[cfg(not(target_os = "linux"))]
-        let _ = (button, pressed, modifiers);
-    }
-    pub fn cube2_wheel(&mut self, x: i32, y: i32, modifiers: u32) {
-        #[cfg(target_os = "linux")]
-        if let Some(cube) = &mut self.cube2 {
-            cube.wheel(x, y, modifiers);
-        }
-        #[cfg(not(target_os = "linux"))]
-        let _ = (x, y, modifiers);
-    }
     pub fn exited(&self) -> bool {
-        if self.window_state().closed {
-            return true;
-        }
-        #[cfg(target_os = "linux")]
-        if let Some(cube) = &self.cube2 {
-            return cube.exited;
-        }
-        #[cfg(all(test, any(target_os = "linux", windows)))]
-        if let Some(native) = &self.native {
-            return native.exited;
-        }
-        self.store
-            .as_ref()
-            .and_then(|s| s.data().doom.as_ref())
-            .is_some_and(|doom| doom.exited)
+        self.window_state().closed
     }
     pub fn finish(&mut self) -> Result<()> {
-        #[cfg(target_os = "linux")]
-        if let Some(cube) = &mut self.cube2 {
-            let save = cube.finish();
-            let progress = if let Some(progress) = &mut self.progress {
-                progress.finish().context("Unable to save play history")
-            } else {
-                Ok(())
-            };
-            save?;
-            progress?;
-            return Ok(());
-        }
         if let Some(progress) = &mut self.progress {
             progress.finish().context("Unable to save play history")?;
         }
         Ok(())
     }
-    /// Read-only builtin engine state for playback diagnostics.
-    pub fn builtin_controller(&mut self) -> Result<Option<u32>> {
-        if self.is_cube2() {
-            return Ok(None);
-        }
-        #[cfg(all(test, any(target_os = "linux", windows)))]
-        if let Some(n) = &self.native {
-            return Ok(n.diagnostic.map(|d| d.2));
-        }
-        if let Some(doom) = self.store.as_mut().unwrap().data_mut().doom.as_mut() {
-            return doom.controller().map(Some);
-        }
-        self.store
-            .as_mut()
-            .unwrap()
-            .data_mut()
-            .zelda
-            .as_mut()
-            .map(crate::zelda3::Zelda::controller)
-            .transpose()
-    }
-    pub fn builtin_state(&mut self) -> Result<Option<(u32, u16, u16)>> {
-        if self.is_cube2() {
-            return Ok(None);
-        }
-        #[cfg(all(test, any(target_os = "linux", windows)))]
-        if let Some(n) = &self.native {
-            return Ok(n.diagnostic.map(|d| (d.0, d.1 as u16, (d.1 >> 16) as u16)));
-        }
-        if let Some(doom) = self.store.as_mut().unwrap().data_mut().doom.as_mut() {
-            return doom.state().map(Some);
-        }
-        self.store
-            .as_mut()
-            .unwrap()
-            .data_mut()
-            .zelda
-            .as_mut()
-            .map(crate::zelda3::Zelda::state)
-            .transpose()
-    }
     pub fn audio_channels(&self) -> u32 {
-        #[cfg(target_os = "linux")]
-        if let Some(cube) = &self.cube2 {
-            return cube.audio_channels;
-        }
         #[cfg(all(test, any(target_os = "linux", windows)))]
         if let Some(native) = &self.native {
             return native.audio_channels;
@@ -1378,10 +980,6 @@ impl Game {
         self.store.as_ref().unwrap().data().audio_channels
     }
     pub fn audio_frame(&self) -> &[i16] {
-        #[cfg(target_os = "linux")]
-        if let Some(cube) = &self.cube2 {
-            return &cube.audio;
-        }
         #[cfg(all(test, any(target_os = "linux", windows)))]
         if let Some(n) = &self.native {
             return &n.audio;
@@ -1389,52 +987,11 @@ impl Game {
         &self.store.as_ref().unwrap().data().audio
     }
     pub fn frame(&self) -> &crate::drawing::Frame {
-        #[cfg(target_os = "linux")]
-        if let Some(cube) = &self.cube2 {
-            return &cube.frame;
-        }
         #[cfg(all(test, any(target_os = "linux", windows)))]
         if let Some(n) = &self.native {
             return &n.frame;
         }
         &self.store.as_ref().unwrap().data().frame
-    }
-    pub fn doom_input_allowed(&self) -> bool {
-        self.doom_engine && self.input_allowed
-    }
-    pub fn doom_release_input(&mut self) -> Result<()> {
-        self.doom_events.clear();
-        self.doom_input(crate::doom_input::Event::Release)
-    }
-    pub fn doom_input(&mut self, event: crate::doom_input::Event) -> Result<()> {
-        anyhow::ensure!(
-            self.doom_engine && self.input_allowed,
-            "DOOM desktop input access denied"
-        );
-        event.words()?;
-        if let (
-            Some(crate::doom_input::Event::Mouse {
-                buttons: old_buttons,
-                dx: old_dx,
-                dy: old_dy,
-            }),
-            crate::doom_input::Event::Mouse { buttons, dx, dy },
-        ) = (self.doom_events.last_mut(), event)
-        {
-            if *old_buttons == buttons {
-                if let (Some(x), Some(y)) = (old_dx.checked_add(dx), old_dy.checked_add(dy)) {
-                    *old_dx = x;
-                    *old_dy = y;
-                    return Ok(());
-                }
-            }
-        }
-        anyhow::ensure!(
-            self.doom_events.len() < crate::doom_input::MAX_QUEUED,
-            "DOOM desktop input queue is full"
-        );
-        self.doom_events.push(event);
-        Ok(())
     }
     pub fn input_event(&mut self, event: crate::input_events::Event) -> Result<()> {
         anyhow::ensure!(
@@ -1444,7 +1001,7 @@ impl Game {
         Ok(())
     }
     pub fn input_events_allowed(&self) -> bool {
-        self.input_allowed && !self.builtin_engine
+        self.input_allowed
     }
     fn user_files_mut(&mut self) -> Option<&mut crate::user_files::Service> {
         #[cfg(all(test, any(target_os = "linux", windows)))]
@@ -1557,31 +1114,14 @@ impl Game {
         if let Some(files) = self.user_files_mut() {
             files.begin(file_gesture);
         }
-        let events: Vec<_> = self
-            .doom_events
-            .drain(..self.doom_events.len().min(crate::doom_input::MAX_PER_TICK))
-            .collect();
         if let Some(progress) = &mut self.progress {
             progress.start();
-        }
-        #[cfg(target_os = "linux")]
-        if let Some(cube) = &mut self.cube2 {
-            cube.step(input)?;
-            self.state = self.state.wrapping_add(1);
-            if let Some(progress) = &mut self.progress {
-                progress.tick(&[])?;
-            }
-            return Ok(self.state);
         }
         #[cfg(all(test, any(target_os = "linux", windows)))]
         if let Some(n) = &mut self.native {
             n.window.begin(file_gesture);
             n.set_input_events(input_events);
-            self.state = n.step(
-                if self.input_allowed { input } else { 0 },
-                self.state,
-                &events,
-            )?;
+            self.state = n.step(if self.input_allowed { input } else { 0 }, self.state)?;
             if let Some(progress) = &mut self.progress {
                 if let Err(error) = progress.tick(&n.achievements) {
                     n.frame.reset();
@@ -1624,16 +1164,6 @@ impl Game {
             .data_mut()
             .input_events
             .begin(input_events);
-        if !events.is_empty() {
-            self.store
-                .as_mut()
-                .unwrap()
-                .data_mut()
-                .doom
-                .as_mut()
-                .context("DOOM engine is unavailable")?
-                .input_events(&events, self.deadline_epochs)?;
-        }
         self.store
             .as_mut()
             .unwrap()
@@ -2094,91 +1624,6 @@ fn audio_submit(mut caller: Caller<'_, Data>, pointer: i32, count: i32, channels
     }
 }
 
-fn doom_tick(mut caller: Caller<'_, Data>, input: i32, state: i64) -> Result<i64> {
-    let deadline = caller.data().deadline_epochs;
-    let frame = caller
-        .data_mut()
-        .doom
-        .as_mut()
-        .context("DOOM engine is not initialized")?
-        .step(input as u32, state == 0, deadline)?;
-    let data = caller.data_mut();
-    data.frame.background = Some(0x000000ff);
-    let image = crate::drawing::image::Image::new(320, 200, &frame.pixels)
-        .context("invalid DOOM engine image")?;
-    if !data.frame.image(
-        0.0,
-        if data.doom.as_ref().is_some_and(|doom| doom.ending) {
-            40.0
-        } else {
-            0.0
-        },
-        640.0,
-        if data.doom.as_ref().is_some_and(|doom| doom.ending) {
-            400.0
-        } else {
-            480.0
-        },
-        image,
-    ) {
-        bail!("DOOM image exceeds the frame budget");
-    }
-    if data.audio_allowed {
-        data.audio = frame.audio;
-        data.audio_channels = frame.audio_channels;
-    }
-    if let Some(bytes) = frame.save {
-        let save = data
-            .save
-            .as_mut()
-            .context("DOOM requires scoped save access")?;
-        save.bytes = bytes;
-        save.dirty = true;
-    }
-    Ok((state as u64).wrapping_add(1) as i64)
-}
-
-fn zelda3_tick(mut caller: Caller<'_, Data>, input: i32, state: i64) -> Result<i64> {
-    let deadline = caller.data().deadline_epochs;
-    let frame = caller
-        .data_mut()
-        .zelda
-        .as_mut()
-        .context("Zelda3 engine is not initialized")?
-        .step(input as u32, state == 0, deadline)?;
-    let data = caller.data_mut();
-    data.frame.background = Some(0x000000ff);
-    let image = crate::drawing::image::Image::new(frame.width, frame.height, &frame.pixels)
-        .context("invalid Zelda3 engine image")?;
-    let scale = (640.0 / frame.width as f32)
-        .min(480.0 / frame.height as f32)
-        .min(2.0);
-    let width = frame.width as f32 * scale;
-    let height = frame.height as f32 * scale;
-    if !data.frame.image(
-        (640.0 - width) * 0.5,
-        (480.0 - height) * 0.5,
-        width,
-        height,
-        image,
-    ) {
-        bail!("Zelda3 image exceeds the host frame budget");
-    }
-    if data.audio_allowed {
-        data.audio = frame.audio;
-        data.audio_channels = frame.audio_channels;
-    }
-    if let Some(bytes) = frame.save {
-        let save = data
-            .save
-            .as_mut()
-            .context("Zelda3 requires scoped save access")?;
-        save.bytes = bytes;
-        save.dirty = true;
-    }
-    Ok((state as u64).wrapping_add(1) as i64)
-}
-
 fn network_call(
     mut caller: Caller<'_, Data>,
     operation: i32,
@@ -2250,7 +1695,7 @@ mod adversarial_assets_tests {
         disc.seek(SeekFrom::Start(offset)).unwrap();
         disc.write_all(b"ISO!").unwrap();
         drop(disc);
-        let rom = crate::files::RomSet::open(&[path], i32::MAX as u64, false).unwrap();
+        let rom = crate::files::RomSet::open(&[path], i32::MAX as u64).unwrap();
         let mut manifest =
             Manifest::parse(include_bytes!("../examples/minimal/manifest.toml")).unwrap();
         manifest.requires_rom = true;
@@ -2422,73 +1867,6 @@ mod adversarial_assets_tests {
         assert!(game.frame().commands.is_empty());
     }
 }
-#[cfg(test)]
-mod doom_input_tests {
-    use super::*;
-    use crate::doom_input::Event;
-    fn fixture(input: bool) -> Game {
-        let mut manifest =
-            Manifest::parse(include_bytes!("../examples/minimal/manifest.toml")).unwrap();
-        manifest.permissions.input = input;
-        let bytes = wat::parse_str(
-            "(module (func (export \"gamepkg_tick\") (param i32 i64) (result i64) local.get 1))",
-        )
-        .unwrap();
-        Game::from_bytes(&bytes, &manifest).unwrap()
-    }
-    #[test]
-    fn desktop_queue_permissions_coalescing_budget_and_release_are_enforced() {
-        let mut ordinary = fixture(true);
-        assert!(ordinary
-            .doom_input(Event::Key {
-                code: b'a',
-                down: true
-            })
-            .is_err());
-        let mut denied = fixture(false);
-        denied.doom_engine = true;
-        assert!(denied
-            .doom_input(Event::Key {
-                code: b'a',
-                down: true
-            })
-            .is_err());
-        let mut game = fixture(true);
-        game.doom_engine = true;
-        for _ in 0..10000 {
-            game.doom_input(Event::Mouse {
-                buttons: 1,
-                dx: 1,
-                dy: -1,
-            })
-            .unwrap();
-        }
-        assert_eq!(
-            game.doom_events,
-            vec![Event::Mouse {
-                buttons: 1,
-                dx: 10000,
-                dy: -10000
-            }]
-        );
-        for _ in 1..crate::doom_input::MAX_QUEUED {
-            game.doom_input(Event::Key {
-                code: b'b',
-                down: true,
-            })
-            .unwrap();
-        }
-        assert!(game
-            .doom_input(Event::Key {
-                code: b'c',
-                down: true
-            })
-            .is_err());
-        game.doom_release_input().unwrap();
-        assert_eq!(game.doom_events, vec![Event::Release]);
-    }
-}
-
 #[cfg(test)]
 mod persistence_output_tests {
     use super::*;

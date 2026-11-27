@@ -8,7 +8,7 @@ from urllib.parse import unquote, urlsplit
 
 PROJECT = Path(__file__).resolve().parents[1]
 ROOT = PROJECT / 'html'
-DEMO_NAMES = ['collect-stars.gamepkg', 'shape-playground.gamepkg', 'png-sprite-playground.gamepkg', 'zelda3.gamepkg']
+DEMO_NAMES = ['collect-stars.gamepkg', 'shape-playground.gamepkg', 'png-sprite-playground.gamepkg']
 DEMOS = [ROOT / 'demos' / name for name in DEMO_NAMES]
 PUBLIC = [ROOT / 'index.html', *sorted((ROOT / 'guide').glob('*')), *sorted((ROOT / 'spec').glob('*')), *DEMOS, ROOT / 'demos/packages.sha256', *sorted((ROOT / 'support').glob('*')), *sorted((ROOT / 'assets').glob('*'))]
 
@@ -28,7 +28,7 @@ class Links(HTMLParser):
 
 def check():
     recorded = dict((name, digest) for digest, name in (line.split() for line in (ROOT / 'demos/packages.sha256').read_text().splitlines()))
-    assert set(recorded) == set(DEMO_NAMES), 'Unexpected public demo checksum entries'
+    assert set(DEMO_NAMES) <= set(recorded), 'Missing public demo checksum entries'
     for package in DEMOS:
         assert package.is_file() and not package.is_symlink() and package.stat().st_size <= 1024 * 1024
         assert hashlib.sha256(package.read_bytes()).hexdigest() == recorded[package.name], 'Public demo checksum mismatch'

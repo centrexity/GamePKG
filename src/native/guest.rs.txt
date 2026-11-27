@@ -72,7 +72,6 @@ pub mod gamepkg {
     pub fn rom_read(offset:u32,out:&mut[u8])->Option<u32>{rom_read_at(0,offset,out)}
     pub fn save_size()->Option<u32>{number(rpc(5,&[]))}
     pub fn save_read(offset:u32,out:&mut[u8])->Option<u32>{read(6,&[offset,out.len() as u32],out)}
-    fn __gamepkg_engine_save_write(bytes:&[u8])->bool{bytes.len()<=4*1048576&&accepted(24,bytes)}
     pub fn save_chunk(offset:u32,total:u32,bytes:&[u8])->bool{if bytes.len()>65536{return false;}let mut data=u32s(&[offset,total]);data.extend_from_slice(bytes);accepted(39,&data)}
     pub fn save_write(bytes:&[u8])->bool{bytes.len()<=1048576&&accepted(7,bytes)}
     pub fn draw_clear(rgba:u32)->bool{accepted(8,&u32s(&[rgba]))}
@@ -83,7 +82,6 @@ pub mod gamepkg {
     pub fn draw_shader(index:u32)->bool{accepted(11,&u32s(&[index]))}
     pub fn audio_submit_stereo(samples:&[i16])->bool{if samples.len()>1600||samples.len()%2!=0{return false;}let b:Vec<u8>=samples.iter().flat_map(|v|v.to_le_bytes()).collect();accepted(37,&b)}
     pub fn audio_submit(samples:&[i16])->bool{if samples.len()>1600{return false;}let b:Vec<u8>=samples.iter().flat_map(|v|v.to_le_bytes()).collect();accepted(12,&b)}
-    fn __gamepkg_audio_submit_stereo(samples:&[i16])->bool{if samples.len()>3200||samples.len()%2!=0{return false;}let b:Vec<u8>=samples.iter().flat_map(|v|v.to_le_bytes()).collect();accepted(23,&b)}
     pub fn draw_image(x:f32,y:f32,w:f32,h:f32,pw:u32,ph:u32,pixels:&[u8])->bool{if pw==0||ph==0||pw>512||ph>512||pixels.len()!=pw as usize*ph as usize*4{return false;}let b=u32s(&[x.to_bits(),y.to_bits(),w.to_bits(),h.to_bits(),pw,ph]);rpc_segments(13,&b,pixels)==[0]}
     pub fn draw_image_linear(x:f32,y:f32,w:f32,h:f32,pw:u32,ph:u32,pixels:&[u8])->bool{if pw==0||ph==0||pw>512||ph>512||pixels.len()!=pw as usize*ph as usize*4{return false;}let b=u32s(&[x.to_bits(),y.to_bits(),w.to_bits(),h.to_bits(),pw,ph]);rpc_segments(33,&b,pixels)==[0]}
     pub fn draw_asset_image(path:&str,x:f32,y:f32,w:f32,h:f32)->bool{if path.len()>1024{return false;}let mut b=u32s(&[path.len() as u32]);b.extend(path.as_bytes());b.extend(u32s(&[x.to_bits(),y.to_bits(),w.to_bits(),h.to_bits()]));accepted(14,&b)}
@@ -94,10 +92,6 @@ pub mod gamepkg {
     pub fn achievement_unlock(index:u32)->bool{accepted(17,&u32s(&[index]))}
     // Network requests are mediated by the parent; this worker has no network interface.
     fn __gamepkg_network_call(operation:u32,input:&[u8],output:&mut[u8])->Result<u32,NetworkError>{if input.len()>65540||output.len()>65536{return Err(NetworkError::PermissionDenied);}let mut b=vec![operation as u8];b.extend((output.len() as u32).to_le_bytes());b.extend(input);let data=rpc(22,&b);match data.first(){Some(0) if data.len()-1<=output.len()=>{let n=data.len()-1;output[..n].copy_from_slice(&data[1..]);Ok(n as u32)},Some(2)=>Err(NetworkError::Pending),Some(3)=>Err(NetworkError::Failed),_=>Err(NetworkError::PermissionDenied)}}
-    #[cfg(not(gamepkg_doom))]
-    pub fn doom_tick(_:u32,_:u64)->u64{panic!("No approved DOOM engine")}
-    #[cfg(not(gamepkg_zelda))]
-    pub fn zelda3_tick(_:u32,_:u64)->u64{panic!("No approved Zelda engine")}
     // GAMEPKG_HELPERS
     // GAMEPKG_ENGINE
     pub(super) fn __gamepkg_packet(data:&[u8]) {let mut out=std::io::stdout().lock();out.write_all(&(data.len() as u32).to_le_bytes()).unwrap();out.write_all(data).unwrap();out.flush().unwrap();}
@@ -106,16 +100,11 @@ pub mod gamepkg {
         let mut input=std::io::stdin().lock();let mut len=[0;4];if input.read_exact(&mut len).is_err(){return None;}
         let encoded=u32::from_le_bytes(len);let control=encoded&0x80000000!=0;let n=(encoded&0x7fffffff) as usize;
         if control {
-            #[cfg(gamepkg_zelda)] {
-                assert!((1..=65541).contains(&n));let mut b=vec![0;n];input.read_exact(&mut b).unwrap();drop(input);
-                __gamepkg_packet(&engine::snapshot_control(&b));continue;
-            }
-            #[cfg(not(gamepkg_zelda))] panic!("unsupported native control frame");
+            panic!("unsupported native control frame");
         }
         assert!(n>=12&&n<=204&&(n-12)%12==0);
         let mut b=vec![0;n];input.read_exact(&mut b).unwrap();drop(input);
-        #[cfg(gamepkg_doom)] engine::input(&b[12..]);
-        #[cfg(not(gamepkg_doom))] assert_eq!(n,12);
+        assert_eq!(n,12);
         return Some((u32::from_le_bytes(b[..4].try_into().unwrap()),u64::from_le_bytes(b[4..12].try_into().unwrap())));
       }
     }

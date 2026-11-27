@@ -1,28 +1,28 @@
 # Port fidelity audit
 
-Initial audit: 2026-10-17; current Takedawn summary reconciled on 2026-11-02.
+Initial audit: 2026-10-17; current Port summary reconciled on 2026-11-02.
 Compare behavior against each credited, pinned upstream revision. A playable port or passing smoke test does not prove feature parity.
-The implementation tracker is [port-parity.toml](port-parity.toml); unfinished
+Port-specific implementation trackers live in the separate Ports checkout; unfinished
 work stays open until behavior is verified.
 
 ## Current port summary
 
 | Port | Verified behavior and remaining gaps |
 | --- | --- |
-| Takedawn | Signed v15 delivery retains all 24,003 prepared Rust game functions in 487 units and 24,035 native exports, plus the original C/C++ platform runtime. Linux and actual Windows cold Build/integrity repair pass; Linux ISO-in-place Play, remembered selection/history, Race/Crash and three split-screen accelerator/pause/Resume routes pass. Normal-input Bronze rewards, unlocks, autosave and fresh-process medal reload have private tests. The v16 native executable now naturally completes an original three-lap Downtown Southbound Race for both players with zero CPU rivals, then follows normal Results, Score, successful autosave and mode return. A fresh process loads the earned profile and displays both exact lap records: P2 2:25.15 and P1 2:38.53. The same track also completes with the default four CPU rivals: P2 finishes fifth in 11:57.71 and P1 sixth in 15:47.01, then the original Score, successful autosave and mode return retain 0–1. These qualify the selected zero/four-rival routes rather than complete multiplayer/campaign parity. Default Party Crash Solo also completes two shared-controller turns in one round at Trailer Trash, with $84,633 per player, original final standings and normal main-menu return; this route does not establish Party Crash autosave/persistence. The v16 candidate separately fixes a reproduced Team Crush results/replay input defect; normal signed Linux Build, correct A/B menu prompts, fresh A confirmation during replay and successful original autosave pass, with 261 sanitized input cases at each pointer width. Current v16 Windows runtime rebuilding and Team Crush results/Continue pass under Wine using the verified unchanged Rust archive; normal v16 Windows Build/repair under Wine also passes with retained objects and a Z: temporary directory, while protected original-game Play and physical Windows remain open. Fresh original Linux and Wine processes display their separately earned Trailer Trash records ($26,737 and $6,736) with byte-identical saved profiles. Current Linux default-native CLI selected/remembered ISO launches and increasing play history also pass. The current Linux GUI direct-game entry additionally passes separate native window, actual keyboard navigation to the earned record, normal window close and increasing history, with a private null-only audio sink. Two genuine missing bodies are recovered; 13 unresolved upstream labels remain under audit and are not all proven to be valid function entries. Physical Windows original-game graphics/audio/controllers, exact pacing/steering/audio fidelity, mixed prompts, full campaigns and broader native platforms remain open. |
-| Cube 2 | Wayland lock-state access, Windows lock-state runtime validation, remaining uncommon-key/platform behavior and full controller/touch equivalence; further LAN/platform and master authentication/registration fault/service coverage; custom asset/mod workflows; large recording import/export and further movie capture fidelity; hardware-accelerated engine rendering; native platforms beyond Linux. Vulkan currently presents software-rendered engine frames. |
-| DOOM | Original WAD music, stereo effects, six save slots, configuration, desktop controls and quit/ENDOOM are runtime verified. Complete playback of all 45 selected-WAD music entries, supported map/save/load music transitions and ordered/merge PWAD cases have private tests. Normal default native Build/Play and game-only OpenGL/Vulkan windows pass on actual Windows at both executable widths with public Freedoom: input, original save/gamma, restart/history, remembered WAD and real onscreen resizing. This does not establish physical GPU/audio/controller or pixel-perfect original-game fidelity. Music backend selection, multiplayer, complete mod/campaign compatibility and broader control/platform coverage remain unfinished. |
-| Zelda3 | Original ROM gameplay, stereo and SRAM are verified in native and Wasm. Widescreen/240-line rendering, extra sprites, dim flashes and earlier button-press intro skipping have signed defaults, saved GUI/CLI controls and runtime tests. All original enhancement switches now have signed/saved controls and exhaustive flag-mapping tests; selected combined gameplay and low-health behavior are verified. External MSU music, replay/save-state tools, language selection and complete enhancement/campaign/platform behavior remain open. |
-| Arkanoo | Original gameplay, all twelve procedural backgrounds, six image backgrounds, original fonts/artwork, editor/archive workflows, music playlist and all five recorded effects are restored. Recorded playback uses the output clock independently of game ticks. Resolution confirmation/revert and VSync have actual runtime checks. The complete canonical gate at host `6995119` / ports `59112ca` passes original-reference tests, full-size decomposed Unicode-name typing in native/core/component players, browser playback/exports, 24 dense maximum-save scenes and signed legacy compatibility. Exact MP3 codec parity, physical audio/controllers, full campaigns and wider platform qualification remain open. Current runs do not persist; high score, unlocked level and saved preferences do. |
-| 2048 | Random spawning, merge scoring/best score, win/continue/game-over UI, restart, 128-step undo and persistent boards/history are implemented and tested. Byte-sized tile exponents remove the old 32768 cap. Cooperative expectimax assistance/autoplay matches independent upstream reference fixtures; a deterministic 932-turn game reaches 2048. Final signed-package delivery and broader platform verification remain open. |
+| Port | Signed v15 delivery retains all 24,003 prepared Rust game functions in 487 units and 24,035 native exports, plus the original C/C++ platform runtime. Linux and actual Windows cold Build/integrity repair pass; Linux ISO-in-place Play, remembered selection/history, Race/Crash and three split-screen accelerator/pause/Resume routes pass. Normal-input Bronze rewards, unlocks, autosave and fresh-process medal reload have private tests. The v16 native executable now naturally completes an original three-lap Downtown Southbound Race for both players with zero CPU rivals, then follows normal Results, Score, successful autosave and mode return. A fresh process loads the earned profile and displays both exact lap records: P2 2:25.15 and P1 2:38.53. The same track also completes with the default four CPU rivals: P2 finishes fifth in 11:57.71 and P1 sixth in 15:47.01, then the original Score, successful autosave and mode return retain 0–1. These qualify the selected zero/four-rival routes rather than complete multiplayer/campaign parity. Default Party Crash Solo also completes two shared-controller turns in one round at Trailer Trash, with $84,633 per player, original final standings and normal main-menu return; this route does not establish Party Crash autosave/persistence. The v16 candidate separately fixes a reproduced Team Crush results/replay input defect; normal signed Linux Build, correct A/B menu prompts, fresh A confirmation during replay and successful original autosave pass, with 261 sanitized input cases at each pointer width. Current v16 Windows runtime rebuilding and Team Crush results/Continue pass under Wine using the verified unchanged Rust archive; normal v16 Windows Build/repair under Wine also passes with retained objects and a Z: temporary directory, while protected original-game Play and physical Windows remain open. Fresh original Linux and Wine processes display their separately earned Trailer Trash records ($26,737 and $6,736) with byte-identical saved profiles. Current Linux default-native CLI selected/remembered ISO launches and increasing play history also pass. The current Linux GUI direct-game entry additionally passes separate native window, actual keyboard navigation to the earned record, normal window close and increasing history, with a private null-only audio sink. Two genuine missing bodies are recovered; 13 unresolved upstream labels remain under audit and are not all proven to be valid function entries. Physical Windows original-game graphics/audio/controllers, exact pacing/steering/audio fidelity, mixed prompts, full campaigns and broader native platforms remain open. |
+| port | Wayland lock-state access, Windows lock-state runtime validation, remaining uncommon-key/platform behavior and full controller/touch equivalence; further LAN/platform and master authentication/registration fault/service coverage; custom asset/mod workflows; large recording import/export and further movie capture fidelity; hardware-accelerated engine rendering; native platforms beyond Linux. Vulkan currently presents software-rendered engine frames. |
+| the port | Original WAD music, stereo effects, six save slots, configuration, desktop controls and quit/ENthe port are runtime verified. Complete playback of all 45 selected-WAD music entries, supported map/save/load music transitions and ordered/merge PWAD cases have private tests. Normal default native Build/Play and game-only OpenGL/Vulkan windows pass on actual Windows at both executable widths with public Freeport: input, original save/gamma, restart/history, remembered WAD and real onscreen resizing. This does not establish physical GPU/audio/controller or pixel-perfect original-game fidelity. Music backend selection, multiplayer, complete mod/campaign compatibility and broader control/platform coverage remain unfinished. |
+| the port | Original ROM gameplay, stereo and SRAM are verified in native and Wasm. Widescreen/240-line rendering, extra sprites, dim flashes and earlier button-press intro skipping have signed defaults, saved GUI/CLI controls and runtime tests. All original enhancement switches now have signed/saved controls and exhaustive flag-mapping tests; selected combined gameplay and low-health behavior are verified. External MSU music, replay/save-state tools, language selection and complete enhancement/campaign/platform behavior remain open. |
+| the example port | Original gameplay, all twelve procedural backgrounds, six image backgrounds, original fonts/artwork, editor/archive workflows, music playlist and all five recorded effects are restored. Recorded playback uses the output clock independently of game ticks. Resolution confirmation/revert and VSync have actual runtime checks. The complete canonical gate at host `6995119` / ports `59112ca` passes original-reference tests, full-size decomposed Unicode-name typing in native/core/component players, browser playback/exports, 24 dense maximum-save scenes and signed legacy compatibility. Exact MP3 codec parity, physical audio/controllers, full campaigns and wider platform qualification remain open. Current runs do not persist; high score, unlocked level and saved preferences do. |
+| Tile puzzle example | Random spawning, merge scoring/best score, win/continue/end UI, restart, undo and persistent boards/history are implemented and tested. Bounded tile exponents and checked fixed-width storage remove the old cap. Cooperative assistance matches independent upstream reference fixtures. Final signed-package delivery and broader platform verification remain open. |
 
-Evidence: [README coverage table](../README.md#port-feature-coverage),
-[DOOM adapter](../engines/doom/adapters/engine.c),
-[Zelda adapter](../engines/zelda3/adapters/engine.c),
-[Arkanoo credits](../ports/arkanoo/CREDITS.md), and
-[2048 implementation](../ports/2048/source/src/lib.rs).
+Evidence: [developer guide](DEVELOPING_GAMES.md),
+[native runtime](NATIVE_RUNTIME.md),
+[port services](PORT_SERVICES.md),
+[port fidelity policy](PORT_FIDELITY.md), and
+[implementation status](IMPLEMENTATION_STATUS.md).
 
-Cube 2's physical keyboard path now preserves Pause, keypad distinctions and
+port's physical keyboard path now preserves Pause, keypad distinctions and
 left/right modifiers, plus media/browser/application keys with SDL equivalents.
 The engine accepts and releases keys across SDL's full bounded scancode table.
 Actual desktop tests verify independent ordinary and media-key bindings,
@@ -36,9 +36,9 @@ The sections below retain the staged audit and its follow-up evidence. Earlier
 statements that music, fonts, resolution/VSync or SDK wiring were missing describe
 those earlier stages; use the current summary above, the later feature records
 and [current audio instructions](../tools/audio-decoder/README.md) for present
-support. No historical result alone qualifies a later complete build. Current
-canonical and Windows game-window evidence is recorded in
-[native qualification](native-windows-gameplay-validation.md).
+support. No historical result alone qualifies a later complete build. Port-specific
+canonical and Windows game-window evidence is recorded in the owning Ports
+checkout; this host document retains only generic service evidence.
 
 ### Original shared-runtime work list
 
@@ -50,10 +50,10 @@ the original operation happened.
 
 | Source | Observed behavior | Required follow-up |
 | --- | --- | --- |
-| `engines/cube2/adapters/network.h` | Broadcast reaches the owned UDP socket; real nonblocking TCP now supports bind/connect/listen/accept/poll/shutdown. Reverse lookup returns a numeric address. Bounded buffer sizes, timeouts, address reuse and TTL now reach the actual host socket; error/TTL queries read host results. Socket shutdown now reaches the OS; bounded browser snapshots use explicit virtual EOF/half-close semantics. | Audit each original ENet caller; finish the host operations it needs and test real discovery, authentication, server registration, disconnect and error handling. Keep permission denial explicit. Do not infer complete networking from ordinary packet exchange. |
-| `engines/zelda3/adapters/engine.c` | Signed/saved video options configure the original PPU before play: bounded side area, height, sprite limits, dim flashes and early intro skipping. Default language remains selected, external MSU playback is unavailable, and the frame scheduler omits the desktop replay log. | Add selected optional resources, language configuration and bounded replay/save-state persistence, and finish individual enhancement/campaign behavior qualification with actual engine tests. Existing ROM/presentation checks do not verify those missing features. |
-| `ports/arkanoo/source/src/menu.rs` and `render.rs` | All five original recorded effects are restored, but the menu covers only part of the original presentation/settings and effects still advance through game ticks. | Restore the remaining transitions, resolution confirmation/revert, VSync and remaining licensed art/audio; verify each against the pinned original. Window-size persistence alone does not implement a resolution menu. |
-| `ports/2048/CREDITS.md` | Tile exponents stop at 63 and scores use checked fixed-width storage; the reference implementation has a smaller tile representation. | Retain explicit bounds in documentation and boundary tests. Verified solver/gameplay behavior does not establish unlimited arithmetic, package delivery or every-platform support. |
+| `engines/port/adapters/network.h` | Broadcast reaches the owned UDP socket; real nonblocking TCP now supports bind/connect/listen/accept/poll/shutdown. Reverse lookup returns a numeric address. Bounded buffer sizes, timeouts, address reuse and TTL now reach the actual host socket; error/TTL queries read host results. Socket shutdown now reaches the OS; bounded browser snapshots use explicit virtual EOF/half-close semantics. | Audit each original ENet caller; finish the host operations it needs and test real discovery, authentication, server registration, disconnect and error handling. Keep permission denial explicit. Do not infer complete networking from ordinary packet exchange. |
+| `engines/port3/adapters/engine.c` | Signed/saved video options configure the original PPU before play: bounded side area, height, sprite limits, dim flashes and early intro skipping. Default language remains selected, external MSU playback is unavailable, and the frame scheduler omits the desktop replay log. | Add selected optional resources, language configuration and bounded replay/save-state persistence, and finish individual enhancement/campaign behavior qualification with actual engine tests. Existing ROM/presentation checks do not verify those missing features. |
+| Port-owned menu sources | Recorded effects are restored by the port, but presentation/settings coverage and effect timing remain port-owned qualifications. | Verify each behavior against the pinned upstream source and signed package before claiming parity. Window-size persistence alone does not implement a settings menu. |
+| Port-owned credits | Bounded tile exponents and checked fixed-width storage retain explicit limits; the reference implementation may use a smaller representation. | Retain explicit bounds in documentation and boundary tests. Verified port logic does not establish unlimited arithmetic, package delivery or every-platform support. |
 
 Single-threaded audio lock no-ops and host-supplied SRAM are intentional
 adaptations, not automatically missing features. They still require evidence
@@ -85,7 +85,7 @@ when a verified host replacement provides the same observable behavior.
 
 ## Remaining original presentation is not cosmetic completion
 
-Arkanoo's pinned `rendering.rs` also has dedicated implementations for ball
+the example port's pinned `rendering.rs` also has dedicated implementations for ball
 speed lettering,
 bonus icons, animated backgrounds, portal rendering, HUD/FPS, pause/settings,
 game-over, level-transition/victory and editor presentation. Background/menu/HUD presentation and bitmap lettering still contain replacements.
@@ -96,9 +96,9 @@ Keep each original drawing path open until its behavior has reference evidence;
 matching a few screenshots is insufficient for animated or stateful effects.
 
 The same rule applies to engine adapters: unavailable features must report failure
-or remain visibly unsupported. Cube 2 shutdown/listen/accept now reach owned TCP
+or remain visibly unsupported. port shutdown/listen/accept now reach owned TCP
 sockets; UDP broadcast also reaches the host socket. Private IPv4 LAN discovery now has actual-engine verification below; platform
-and further fault coverage remain open. Zelda's ignored MSU enable remains a confirmed
+and further fault coverage remain open. port's ignored MSU enable remains a confirmed
 gap. Shared host work still needed is:
 
 - Selected resource collections/directories and bounded streaming for mods,
@@ -124,13 +124,13 @@ remain open for the other engines.
 
 The ordered source-input changes have passed the full Rust suite, permission and
 malformed-buffer checks, native gameplay, and core/component browser gameplay.
-Arkanoo tests exercise mouse scaling, Space/Escape controls and Restart; SDK
+the example port tests exercise mouse scaling, Space/Escape controls and Restart; SDK
 fixtures also cover Unicode, layout-aware keys and denied input permissions.
 Both 32-bit and 64-bit Windows builds pass compilation checks; this is not
 Windows gameplay verification. These checks do not close the remaining feature
 gaps listed above.
 
-Cube 2's rebuilt desktop fixture also passes original startup, console, saved
+port's rebuilt desktop fixture also passes original startup, console, saved
 preferences and physical-key regressions with the explicit OpenGL test backend.
 The headless display lacks Vulkan presentation support (DRI3), so this round
 does not establish Vulkan playback. The application's Vulkan default is unchanged.
@@ -148,7 +148,7 @@ unverified behavior explicitly; do not silently skip it or describe it as done.
 
 Latest local validation: the full Rust suite passes 375 tests. Its 50
 fixture-dependent or platform-specific ignored tests are not counted as passed.
-The signed isolated Arkanoo harness separately executes 26 fixture tests on Wasm
+The signed isolated the example port harness separately executes 26 fixture tests on Wasm
 and again with native builds, plus actual native-window and core/component
 browser checks. Both Windows word sizes pass compilation checks; Windows gameplay,
 full campaigns and updated signed-package delivery remain separate requirements.
@@ -187,7 +187,7 @@ both browser profiles pass real pointer drags, mute, persisted flags and rendere
 settings restoration after Restart. Original recorded effects/music and broader
 settings/platform fidelity remain open.
 
-Cube 2 socket-option regressions now inspect actual OS receive/send buffers,
+port socket-option regressions now inspect actual OS receive/send buffers,
 address reuse, timeouts and TTL before and after binding a signed listening
 endpoint. Options are reapplied before bind, so address reuse affects binding.
 Malformed requests, invalid/stale handles, excessive values, blocking mode and
@@ -209,14 +209,14 @@ returned server to `servers.cfg`, joins it, preserves the background connection
 and shuts down cleanly. This exercises the snapshot stream's nonblocking/error
 queries as well as the UDP option protocol; no public server is contacted.
 
-Arkanoo startup, splash skip/timing, restart timer lifetime and editor return now
+the example port startup, splash skip/timing, restart timer lifetime and editor return now
 match independent pinned-original state observations. Splash clicks are consumed
 once; editor return retains the paused run and New Game/Resume state. Replacement
 splash artwork, original music/audio, remaining display/settings controls and
 other visual fidelity are still open. Saved preferences remain a GamePKG feature;
 active-run persistence is not implemented.
 
-The updated signed Arkanoo harness passes all 24 runtime tests on Wasm and again
+The updated signed the example port harness passes all 24 runtime tests on Wasm and again
 with native builds where supported, plus the real Linux native window and both
 core/component browser profiles. Their setup now explicitly skips the splash
 before exercising menu, effects, gameplay, editor and system-file controls.
@@ -225,7 +225,7 @@ in the same first tick, preserving its rollback boundary. Full Rust validation
 passes 368 tests with 48 ignored; lint, browser input/window checks and public
 site-link validation also pass. These are not Windows/Android gameplay tests.
 
-Arkanoo shard particles now restore original lifetimes, rotation/spin, gravity,
+the example port shard particles now restore original lifetimes, rotation/spin, gravity,
 fading, diamond-point shape and launch/brick/record/portal burst rules without
 the former 64-particle cap. An independent oracle compiles the unchanged original
 Particle implementation and draw function; 114 observations cover each ordered
@@ -252,7 +252,7 @@ per-tick reset, and rejection of malformed/truncated blocks; a failed cached
 random tick preserves both the committed save bytes and modification time.
 Hosted confirmation of the optimized native frame remains pending.
 
-Arkanoo ball-history trails now follow the original pre-physics 800/1400 px/s
+the example port ball-history trails now follow the original pre-physics 800/1400 px/s
 thresholds and one-entry trimming, including the original tier-drop behavior.
 Regular/super comet length, radius, gradient, fading/pulsing and spinning ring
 match unchanged original drawing fragments. Full-file hashes guard the oracle;
@@ -291,7 +291,7 @@ remaining menus and recorded audio are still open.
 
 Current validation supersedes the historical totals above: 380 ordinary Rust
 tests pass; 52 fixture/platform tests are ignored by that command and are not
-counted as passed. The isolated signed harness separately passes all 28 Arkanoo
+counted as passed. The isolated signed harness separately passes all 28 the example port
 runtime tests on Wasm and again with native builds where available, followed by
 actual Linux native and core/component browser gameplay/editor/file checks.
 This is source verification, not updated signed-catalog delivery or a claim of
@@ -299,9 +299,9 @@ Windows/Android gameplay, full campaign coverage or complete port fidelity.
 
 
 The final source audit also checked engine-build patches and virtual-file
-allowlists. Cube 2 saves selected config/map/image/demo extensions within fixed
+allowlists. port saves selected config/map/image/demo extensions within fixed
 quotas; movie outputs and arbitrary mod trees must not be assumed persistent.
-Zelda stores SRAM, not desktop replay/save-state files. These limits require
+port stores SRAM, not desktop replay/save-state files. These limits require
 explicit workflows and behavior tests, not broader ambient filesystem access.
 Both Windows word-size compilation checks, all browser unit scripts, lint,
 formatting and seven-page public-site link validation pass for this source.
@@ -366,7 +366,7 @@ enabled run sends a real limited broadcast to port 28784, receives the same
 original ping token from the custom server's information port, saves the
 correct discovered address/port, clicks its original browser row and joins.
 Both sides confirm the remote identity and close successfully. Packet metadata,
-phase screenshots and server lists stay under ignored `target/cube2-lan-proof/`.
+phase screenshots and server lists stay under ignored `target/port-lan-proof/`.
 
 The fixture waits for the original game welcome/player identity, not merely the
 ENet transport connection: changing a name before welcome is discarded by the
@@ -400,7 +400,7 @@ attempts cannot overwrite packet evidence; `verified.txt` identifies a successfu
 run. Lint, formatting and all seven public-page link checks pass. No production
 network policy or runtime permissions were changed by these test additions.
 
-Resource-loading follow-up: the staged, pinned Cube 2 engine now announces cold
+Resource-loading follow-up: the staged, pinned port engine now announces cold
 model loads, first geometry/material use, shader compilation/first binding,
 texture/cubemap uploads and surface reallocations. Model and shader cleanup reset
 the first-use state. Notifications coalesce once per input frame; the existing
@@ -433,7 +433,7 @@ unfocused sampling and focus-return resynchronization. A narrowly scoped trusted
 UI FFI allowance follows the existing clipboard integration pattern; guest source
 restrictions are unchanged.
 
-Cube 2's protocol and reviewed engine now accept precisely the Caps/Num bits in
+port's protocol and reviewed engine now accept precisely the Caps/Num bits in
 addition to their earlier modifier mask. Host keyboard, mouse and wheel paths
 retain those bits, including after held keys are cleared. Unknown bits remain
 rejected. Windows uses GetKeyState's toggle bit; its runtime behavior and native
@@ -456,7 +456,7 @@ these are compilation evidence only. Strict lint, formatting and public-site lin
 checks pass. Source-only publication retains app version 0.1.17.
 
 
-Ordered pointer follow-up: Cube 2 now consumes all eight original physical mouse buttons on X11
+Ordered pointer follow-up: port now consumes all eight original physical mouse buttons on X11
 and both wheel axes from the same native event sequence as physical keys and
 accepted text. Mouse/wheel events carry the held modifier sides and current lock
 snapshot at their position in that sequence. Primary/secondary clicks no longer
@@ -464,7 +464,7 @@ collapse into a once-per-paint held mask. The click used to regain mouse capture
 is suppressed. Fractional wheel movement retains logical-pixel scaling and clears
 on focus loss. The host resets this state when starting a new game.
 
-The portable keyboard mapper also no longer feeds Cube 2 alongside its physical
+The portable keyboard mapper also no longer feeds port alongside its physical
 key path. This removes unexpected controller actions from original keys such as
 Z and avoids fabricating left-Shift while right-Shift is held. Controller/touch
 actions still use their existing portable mapping. Reviewed mouse state combines
@@ -517,7 +517,7 @@ Modifier validation on the final source: 400 default all-features tests pass wit
 regression passes explicitly, as do the signed-package cache/integrity test,
 eight-button/wheel/ordering GUI check and original startup/lock/focus/close GUI
 check. Both Windows all-features build checks, strict lint, formatting, all 125
-pinned Cube 2 source hashes and seven public-page link checks pass. Both app
+pinned port source hashes and seven public-page link checks pass. Both app
 entries are rebuilt locally. This closes the reproduced SDL modifier lookahead
 issue; wider input/port parity remains open and no release is created.
 
@@ -561,7 +561,7 @@ controls. Production-helper integration tests cover zero, ordinary and maximum
 IDs, matching fingers on distinct devices, distinct fingers on one device,
 duplicate starts, orphan events, terminal events and reacquisition. The full
 737-test release suite, strict lint, 32-bit Windows library compilation and
-real native Cube 2 mouse/focus/window regression pass. This proves the routing
+real native port mouse/focus/window regression pass. This proves the routing
 change and host regression coverage, not multi-touchscreen hardware behavior.
 The cancellation follow-up below completes emulated-button cleanup and focus
 interruption; pointer disappearance alone intentionally does not release a
@@ -585,7 +585,7 @@ context, covering ownership, interruption, orphan events and fresh-tap recovery;
 it executes exactly one required test. These are constructed native events,
 not a physical touchscreen qualification. Windows i686 library compilation,
 strict lint, CLI/GUI builds and all 740 standard tests pass; the real native
-Cube 2 mouse/window regression also passes after its private fixture rebuild.
+port mouse/window regression also passes after its private fixture rebuild.
 CI includes the cancellation, native-window and two-width gates. The fork keeps
 the original version, both upstream licenses and source revision, with only
 two modified upstream Rust files. Physical devices and wider platform coverage
@@ -609,7 +609,7 @@ test exposed a nested context-read deadlock, corrected by reading display scale
 before entering the input closure. The full 735-test standard suite passes.
 `tools/check_touch_look.py` builds the actual gesture implementation and its
 ownership/motion test against pinned real egui; host and actual ELF32 execution
-pass. A fresh private Cube 2 native build also passes its real Vulkan-window
+pass. A fresh private port native build also passes its real Vulkan-window
 mouse capture, menus, release/recapture, focus and close regression. Physical
 touchscreens, OS touch-to-mouse emulation and full controller/touch/platform
 equivalence remain unverified.
@@ -674,7 +674,7 @@ cache. This is source progress without a new release or a claim of full port,
 physical-device or every stalled-UI/input-history equivalence.
 
 
-Arkanoo metallic-ball follow-up: the old plain white circle is replaced by the
+the example port metallic-ball follow-up: the old plain white circle is replaced by the
 original procedural metallic texture. The unchanged pinned Rust drawing function
 is compiled to emit its point/color calls; real SDL software rasterization and
 target clipping produce the independent 12×12 RGBA fixture. The generated PNG
@@ -691,11 +691,11 @@ linear draw kind, fractional/negative integer rectangles, heart texture separati
 portal ring/orbit, physics, menus, input, persistence and bounded asset behavior.
 Native GUI gameplay/editor/file-picker workflows and both core/component browser
 players pass. The reference generator checks both pinned source-file hashes before
-compiling its unchanged drawing fragment. Arkanoo's source recipe is 0.1.21;
+compiling its unchanged drawing fragment. the example port's source recipe is 0.1.21;
 no signed package or app release is created. Other art, speed lettering, audio,
 settings and broader platform/pixel-compositing coverage remain open.
 
-Arkanoo glass-paddle follow-up: the flat body and incorrect ghost-bonus tint are
+the example port glass-paddle follow-up: the flat body and incorrect ghost-bonus tint are
 replaced with the original rounded metallic normal/extended textures. The
 unchanged pinned procedure is rasterized by real SDL, retaining corner clipping,
 line endpoints and alpha blending. Both source-derived PNGs match every decoded
@@ -717,7 +717,7 @@ workflows pass with movement checks against the restored cyan core. Reference
 regeneration is byte-identical; strict lint and formatting pass. The source
 recipe advances to 0.1.22 without a signed-package or app release.
 
-Arkanoo normal-brick follow-up: all six original color textures now use the
+the example port normal-brick follow-up: all six original color textures now use the
 unchanged pinned `draw_block_texture` procedure and `BLOCK_COLORS`. Real SDL
 rasterization supplies independent 60×20 RGBA fixtures, including line clipping,
 inner glow, gradient and beveled borders. Every decoded PNG byte matches, and
@@ -764,7 +764,7 @@ Both local app entries are rebuilt; native GUI and core/component browser
 regressions pass. Windows 32/64 all-features compilation checks, strict lint,
 formatting, reference regeneration and seven public-page link checks pass.
 The maintainer harness compiles its test executable first and runs it directly;
-compiler/lock waits no longer consume the runtime test allowance. Arkanoo's source
+compiler/lock waits no longer consume the runtime test allowance. the example port's source
 recipe is 0.1.24; no signed package or app release is created.
 
 Game-color compositing follow-up: an actual SDL/default-OpenGL comparison exposed
@@ -846,17 +846,6 @@ integer geometry is projected at half scale. A dependency-free i32 range sampler
 matches pinned Rand 0.8.5 without changing the established u64 level sampler.
 The editor now advances and uses its own animation clock, rather than a frozen
 gameplay clock; leaving the editor pauses that clock.
-
-The unchanged original branch is compiled by `tests/reference/arkanoo_ice.py`.
-It verifies rendering/entities source hashes, uses pinned Rand dependencies,
-and records 96 cases (twelve frames, four positions, two health states). The
-reference includes shine wrap, f32 precision-boundary and u64-maximum frames.
-Real SDL supplies independent alpha masks: the 61×21 overlay preserves inclusive
-outside endpoints and the 60×20 shine stays clipped. Signed runtime checks compare
-every mask alpha and exact pulse color; the separate editor-clock probe checks
-that the editor draws its own fifth frame while gameplay has advanced once.
-A complete damaged 200-ice board still fits unchanged 1,024-command/8 MiB image
-and tick limits, using three commands per brick. Guest crates remain forbidden.
 
 Grouping white lines into ordered overlay masks introduces software SDL rounding
 differences of at most three 8-bit levels in the 576 original-versus-grouped
@@ -1716,16 +1705,6 @@ all nine choices, gaps, upper/lower edges, click selection, non-motion hover
 retention and non-finite input; digit alpha matches the existing original
 font glyphs with black ink. Font regeneration remains byte-identical.
 
-`tests/editor_palette_gui.py` checks every pixel in the original palette
-region at a 1280x960 client size (original world pixels plus letterboxing),
-including three selection/hover states and a revisit. All six Linux desktop
-configurations pass: 329,664 RGB pixel comparisons, maximum difference one.
-This intentionally verifies canonical pixel size. A first half-size comparison
-against directly scaled original SDL rendering failed; thin primitive borders
-and backdrop resampling do not generally commute with rendering to original
-pixels first. Half-size/fractional window and browser whole-frame presentation
-remain open, as do the Colors label and other original editor/menu lettering.
-No graphics, execution, memory or drawing budget has been increased.
 
 
 ## Original editor static lettering and toolbar
@@ -2158,7 +2137,7 @@ followed by native and both browser gameplay/editor and import/cancel/export
 workflows. Real saved-window tests pass resize/fullscreen/maximized combinations,
 F11, reopen, normal-size preservation, game/OS close, library isolation and damaged
 record fallback. Their obsolete cyan placeholder-title readiness check now uses
-the original independently captured ARKANOO glyph mask and real splash-skip input;
+the independently captured port glyph mask and real splash-skip input;
 it retains the existing timeout and rendering-rounding bounds.
 
 Window-specific raw/WIT/SDK/Node checks, actual native and headed-browser exits,
@@ -2191,7 +2170,7 @@ WebAudio buffers contain the exact independent left/right samples at 48 kHz.
 `tests/stereo_audio_web.cjs` checks browser memory/budget/permission rejection,
 channel deinterleaving and duration measured in frames. Existing mono runtime
 tests and strict GUI lint pass. This is transport support, not restoration of
-Arkanoo's original compressed recordings or its music controls; those remain open.
+the example port's original compressed recordings or its music controls; those remain open.
 
 The original audio-trigger audit found that normal/final ice-brick destruction
 requests Bounce, a first ice crack requests BreakingGlass, rockets request
@@ -2251,7 +2230,7 @@ retaining every rejection. No source-policy restriction was relaxed.
 Recipe 0.1.59 restores the original life-loss and explosion recordings, credited
 to 11325622 and StereogenicStudio under the Pixabay Content License. Their source
 pages, pinned upstream MP3 hashes, prepared WAV/PCM hashes and conversion reference
-are recorded in tests/fixtures/arkanoo-recorded-effects.json and the port credits.
+are recorded in port-owned fixture evidence and the port credits.
 Maintainer-only SDL_mixer decoding uses the original 44.1 kHz mixer format, then
 SDL converts to 48 kHz stereo PCM. Players require no conversion or MP3 tools.
 The two cached clips total 1,656,844 decoded bytes and voices share immutable PCM.
@@ -2646,8 +2625,8 @@ match arm. The minimum supported Rust remains 1.89. No limits, tolerances,
 versions, manifests, assets or catalog packages change.
 
 Strict GUI/all-target checks pass on both Rust 1.89 and 1.99; the default-feature
-all-target check also passes on 1.99. Arkanoo's 100 logic tests and both 71-check
-signed native/Wasm suites pass. The 2048 logic suite passes nine cases with one
+all-target check also passes on 1.99. the example port's 100 logic tests and both 71-check
+signed native/Wasm suites pass. The example logic suite passes nine cases with one
 explicit upstream-oracle ignore, and all five signed native/Wasm state checks
 pass. Host GUI library regressions pass 236 cases with 19 explicit ignores;
 decoder regressions pass seven with two explicit ignores, and resampler
@@ -3265,24 +3244,6 @@ two passes. Every sample and the absence of gaps between passes are verified.
 Thus the original `Music::play(1)` does mean one pass for this API; the new desktop
 SDK's one-pass behavior needs no extra repeat at that boundary.
 
-`tools/check_original_music.py` compiles the unchanged pinned `src/audio.rs`,
-checks its complete source hash and supplies traced SDL controls and deterministic
-random draws. Real temporary directory enumeration verifies sorted lowercase-MP3
-selection and ignored extensions. The oracle checks random startup and next-song
-selection, startup play before saved mute settings, paused muted playback,
-volume changes while paused, unmute/resume, no advance while playing or muted,
-stop disabling automatic advance, empty playlists, load failure followed by a
-new random choice, gain clamping and all effect controls. In particular, the
-original pause is essential: its volume setter can update gain even while muted.
-Both oracles pass locally and have CI gates. No original recordings or modified
-upstream source are added by these tests.
-
-The control oracle traces original decisions; it is not proof of the current
-port's music playback. That port still uses guest-rendered effect PCM and lacks
-music/settings integration. Migrating its shared package now would break browser
-export because browser recorded audio is still rejected. Browser decoding,
-output-clock mixing and transactional controls must be implemented before the
-shared port can migrate with its desktop and browser behavior preserved.
 
 ### Browser recorded-audio decoder and supervised worker
 
@@ -3744,7 +3705,7 @@ no new guest worker is created, then explicitly cleans up the test context.
 Corrupt-companion startup failures with zero retained ownership remain recoverable.
 All final recorded-player checks pass with the one-request guard intact.
 
-### Arkanoo recorded-backend migration inputs
+### the example port recorded-backend migration inputs
 
 The current port still mixes its five 48 kHz effects in guest ticks. Migration
 must use original 44.1 kHz input before shared mixing/conversion, rather than
@@ -3820,29 +3781,9 @@ After rebuilding both desktop entries with the embedded companions, the actual
 signed core/component exported-player regression also passes with chunked input:
 music completion, fresh Restart, Stop/relaunch, checkpoint failure/no replay,
 companion integrity rejection/recovery and close-failure allocation protection.
-
-
-### Lossless full-dataset asset residency audit
-
-`tools/check_arkanoo_asset_residency.py` creates a new private output outside the
-workspace, re-encodes PNGs with maintainer Pillow/optipng, verifies every decoded
-RGBA byte and dimension, and records input/output hashes. It substitutes the
-prepared original-rate effects, verifies prepared recording hashes, includes all
-nine original music tracks and the playlist, and accounts for the exporter's
-additional precise-image RGBA snapshots. It never rewrites published assets.
-
-All 76 PNGs retain exact pixels. Optimized assets with replacement effects use
-12,945,752 bytes; music uses 21,118,219 and the playlist 330. Precise-image data adds
-1,075,272, for 35,139,573 accounted bytes against the unchanged 33,554,432-byte
-limit. Lossless compression alone therefore remains 1,585,141 bytes over budget;
-this audit does not claim a successful full export or port migration. No images,
-tracks or fidelity data are removed. Generated assets and reports remain private.
-Players need none of the maintainer tools.
-
-
 ### Prepared portable music setting persistence
 
-Arkanoo source recipe 0.1.62 prepares ARK4 save support for separate music/effect
+the example port source recipe 0.1.62 prepares ARK4 save support for separate music/effect
 volume and mute settings. The fixed little-endian header keeps the existing save
 size and full pattern capacity. ARK1/2/3 remain readable with music volume 64 and
 unmuted defaults. Unknown bits, either gain above 128, invalid patterns and
@@ -3952,7 +3893,7 @@ interior of the same first cell. This establishes the two tested archive shapes
 and short-name collection editing, not extremely long active names, complete
 guest failure recovery or dense-scene parity.
 
-The explicit `check_arkanoo_recorded_port.py --long-names` qualification now
+The explicit port-owned long-name qualification now
 opens the full-size single identifier in the pattern browser, then attempts
 loading/storing it in the editor without altering its archive bytes. This is
 currently failing in native, core and component desktop runtimes. Core and
@@ -4005,7 +3946,7 @@ actual Linux32. No memory ceiling, source restriction, save format or archive
 name length was changed. Maximum-length typing that requires a distinct working
 copy, broad Unicode maximum-name shaping and dense-scene fidelity remain open.
 
-The separate `check_arkanoo_recorded_port.py --typing` probe now loads the full
+The separate port-owned typing probe now loads the full
 ASCII identifier, enters name editing, removes its final character, types a
 different character, then restores the original character and stores the name.
 Both desktop Wasm profiles complete this input sequence and preserve the final
@@ -4039,7 +3980,7 @@ ceiling, source restriction or text-length limit changed. Broad maximum-name
 Unicode shaping, larger edit workloads, complete guest failure recovery and
 dense-scene parity remain open; these results cover the tested tail-edit case.
 
-The broader production integration suite (`tests/arkanoo.py --runtime-only`)
+The broader port-owned integration suite (`--runtime-only`)
 also passes after the streaming save, segmented identifier and viewport changes.
 All 71 signed runtime checks pass before native builds and again after the
 native builds are installed. Coverage includes original SDL rendering fixtures,
@@ -4057,7 +3998,7 @@ those workflows require their own live checks.
 
 ### Dense campaign scenes with complete recorded audio
 
-`check_arkanoo_recorded_dense.py` now compares six controlled campaign states
+`port-owned recorded-state checks` now compare six controlled campaign states
 with 200 blocks and 3,000 particles against the active source port. The probe
 uses the actual initialized Game and production rendering code; only scene
 state and a direct original-effect request are supplied by the private fixture.
@@ -4085,43 +4026,6 @@ compiles the actual editor codec alongside the prepared playlist controller.
 The active game still writes ARK3 and uses its existing effects path; ARK4 writing
 and music controls are prepared for the complete migration, not enabled as a
 partial port. No recordings or private proofs are published.
-
-
-### Full private recorded-audio port qualification
-
-`tools/prepare_arkanoo_recorded_port.py` now prepares the complete private port
-candidate, including all five hash-checked original-rate effects, all nine
-hash-checked music tracks and the exact playlist. New private outputs must be
-outside the workspace. The source switches effects to host-owned playback,
-adds the original music toggle/slider geometry, persists separate ARK4 settings,
-preserves controls across game resets and uses the qualified playlist manager.
-The published active port is not silently switched or given missing recordings.
-
-The first full source check caught a conservative source-policy collision:
-`text` in the playlist parser matched the renderer's function name. Renaming that
-local to `playlist_text` makes the full package pass without relaxing policy.
-All 32 original controller observations/random draws still match. Source recipe
-0.1.63 contains this rename; gameplay remains on its previous active audio path.
-
-A 4 MiB guest partition failed native startup. The private candidate now assigns
-3 MiB effects, 7 MiB music and 6 MiB guest, preserving the original 16 MiB hard
-ceiling. Its full native and Wasm sources compile under the normal policy.
-`tools/check_arkanoo_recorded_port.py` uses separate temporary signed libraries
-for core/component profiles, retaining normal update/version checks. Actual
-native, core and component executions produce audible original music, freeze
-music progression when muted, accept original menu slider gestures, preserve
-volume 32/muted in ARK4 across restart, and resume playback from the UI. Launched
-gameplay commits an original collision recording through the shared host mixer
-while music is paused; guest PCM remains empty. Strict lint passes.
-
-These are real private full-port controls/output tests, not yet complete gameplay
-or pixel parity, all-track in-game selection, platform coverage or a successful
-browser export. The previous full-dataset browser size barrier remains. Private
-recordings, generated recipes, signed packages and binaries are not published;
-only preparation and qualification source is published. Players need none of
-the maintainer Python/compiler/test tools.
-
-
 ### Exact browser PNG decoding without duplicate raw assets
 
 Source-built exports now select validated noninterlaced 8-bit RGB, RGBA and
@@ -4142,16 +4046,6 @@ back references, end position and Adler checksums are checked. Existing 512-pixe
 dimensions, encoded-image/image-cache/draw limits and worker deadlines remain.
 These named buffers do not establish a whole-browser/JIT/GC memory bound.
 
-`tools/check_browser_png.py --browser` independently decodes all 76 current
-source images with Pillow as a reference, then verifies exact RGBA hashes in
-Node and an actual classic Chromium worker. The same check passes for all 76
-private losslessly optimized PNGs, including packed palettes and grayscale.
-Synthetic cases cover all five filters, RGB/RGBA/grayscale/gray-alpha expansion,
-partial packed rows, split input, exact palette and color-key transparency,
-invalid chunks/CRCs/palettes/dimensions/filters and output overflow. Sixty-four
-independent zlib encodings cover stored/fixed/dynamic/RLE behavior; a 4 MiB
-expansion with a 16-byte allowance fails before exceeding the allowance.
-
 Actual signed core/component exports emit exact indexed, packed-palette,
 grayscale, gray-alpha, RGB color-key and RGBA draw-command pixels without
 duplicate raw assets. A valid 16-bit RGBA case retains its precise host-pixel
@@ -4170,15 +4064,6 @@ raw image duplicates and no memory, export-size or execution-limit changes.
 
 The revised complete private dataset audit reports 12,945,752 optimized asset
 bytes with original-rate replacement effects, 21,118,219 music bytes and a
-330-byte playlist, with zero extra precise-image bytes. Total 34,064,301 remains
-509,869 bytes over the unchanged 33,554,432 export limit. A slower private optipng
-pass saved only another 7,084 bytes, so neither it nor this decoder establishes
-a successful complete browser export. Full gameplay/browser/platform migration
-remains open. No images, recordings, generated recipes or binary artifacts are
-published by this change.
-
-
-### Full original browser dataset fits with bounded lossless WAV storage
 
 The complete private recorded-audio candidate now exports successfully for both
 core and component profiles. It retains all 76 pixel-identical images, five
@@ -4220,19 +4105,6 @@ No logical game timing, runtime deadline or observation timeout was increased.
 Pointer capture is also skipped while pointer lock already owns the surface;
 platform rejection of ordinary pointer capture does not discard the input event.
 
-`tools/check_arkanoo_recorded_web.py` verifies both complete browser exports and
-actual original music, music mute clock freeze, durable slider selection,
-compressed collision effects, normal Escape-to-pause, Restart with restored
-music settings, resume and parent-capacity release. `tests/browser_compressed_assets.py`
-independently verifies full original WAV reads through both SDK forms, actual
-playback, exported memory maxima, pending-loan shutdown retention and fresh
-recovery. Node storage/decoder tests, 18 existing JavaScript checks plus the new store check, production
-worklet/transport/dispatcher/session regressions, 258 enabled host library tests
-(19 resource/platform cases remain explicitly ignored), and strict Rust 1.89/1.99
-checks pass. CI includes the bounded-store, signed compressed-asset, renderer
-batching and full original-dataset preparation/playback checks. All generated recipes, images, recordings, packages and binaries
-remain private; only implementation and qualification source is published.
-
 This qualifies the private full-audio migration on the tested desktop/browser
 paths. Public active-port migration, complete original menu/pixel/gameplay parity,
 other platforms and whole-host memory accounting still require work. The active
@@ -4240,7 +4112,7 @@ public recipe and released app binaries are not represented as already migrated.
 
 ### Maximum archives with recorded audio and dense desktop scenes
 
-The final packed-pattern candidate passes `check_arkanoo_recorded_dense.py
+The final packed-pattern candidate passes the port-owned recorded-state check
 --full-save` in native, core and component desktop runtimes. An exact 1 MiB
 ARK4 save containing 5,041 patterns remains loaded throughout all six dense
 states; the probe verifies the pattern and particle counts as well as exact
@@ -4269,7 +4141,7 @@ green run does not establish those cases or cross-platform completion.
 
 ### Dense browser scenes with maximum archives and recorded audio
 
-`check_arkanoo_recorded_dense_web.py` uses the same private scene initializer
+The port-owned recorded-state web check uses the same private scene initializer
 as the desktop comparison and the production renderer unchanged. Actual
 Chromium core and component exports each pass all six scenes with 200 blocks,
 3,000 particles and the full 5,041-pattern save loaded. Returned state confirms
@@ -4291,15 +4163,6 @@ interactive platform parity. No generated package, media or real key is
 published. The all-feature optimized CLI and GUI rebuild also passes.
 
 ### Unicode cluster lookahead and reproduced maximum-name failure
-
-Unicode shaping no longer allocates a duplicate scalar vector for each
-combining cluster. Iterator lookahead detects variation selectors before
-normalization, preserving the previous append/composition/substitution order.
-The pinned pre-change eager shaper in
-`tests/fixtures/arkanoo_unicode_shape_eager.rs` independently checks exact output
-for 576 mixed base/mark/variation combinations, three 32,768-mark clusters and
-empty/NUL cases. All 103 port unit tests and strict all-target/all-feature lint
-pass, including the existing independently recorded SDL text rasters.
 
 The full private runtime probe now accepts `--unicode-name SAMPLE`, retains a
 valid full 1 MiB archive with a final ASCII character for the existing edit/
@@ -4455,27 +4318,6 @@ background/HUD/gameplay rendering, input, save corruption/denial and recording
 semantics with existing references and budgets. The runtime-only run omits
 interactive GUI workflows; other platform and unproven text requirements
 remain separate.
-
-### Original master retry and registration-state checks
-
-`tests/cube2_master_retry.py` verifies the pinned upstream source set, extracts
-unchanged master-state/output/parser functions plus the original heartbeat
-condition, and runs them with deterministic clock and socket-call stubs. It
-checks the zero-clock sentinel, pending connection timeout at 60 seconds,
-no retry at either five-minute boundary and retry immediately afterward,
-connected hourly registration, synchronous connection refusal scheduling,
-fragmented `failreg`/`succreg` replies, custom reply forwarding, blocked and
-partial sends, and disconnect buffer/address/callback cleanup. A `failreg`
-reply logs failure but does not itself disconnect or invent immediate retries.
-
-AddressSanitizer, UndefinedBehaviorSanitizer and LeakSanitizer all pass with
-halt-on-error enabled. CI includes the regression in both feature matrices.
-The production Rust network broker separately passes its actual loopback TCP
-refusal/error-query and disabled-network test. The fragment harness records
-network calls; it does not run an actual engine or contact a public master.
-Full engine-to-master timed recovery and wider service/platform behavior remain
-open. No original retry interval, network permission, quota or deadline changes.
-
 ### Long-session opaque network-handle correction
 
 The new host regression first failed after 992 allocations even though every
@@ -4520,11 +4362,11 @@ case counts.
 
 
 The original native demo record/retrieve/save/replay path is verified by
-`cube2::session::demos::original_demo_recording_survives_snapshot_and_plays_after_restart`.
+`port::session::demos::original_demo_recording_survives_snapshot_and_plays_after_restart`.
 It records 120 gameplay ticks, validates the compressed original packet stream,
 restarts with the scoped save, observes original demo playback and changing
 rendered frames for 60 ticks, and checks byte-identical demo persistence. Run
-this ignored fixture-bound regression with `GAMEPKG_CUBE2_DATA` pointing at the
+this ignored fixture-bound regression with `GAMEPKG_PORT_DATA` pointing at the
 original local data folder. It does not publish or modify that folder. Large
 recording import/export and movie output remain separate requirements.
 
@@ -4845,7 +4687,7 @@ port. Original media and generated fixture packages are not published.
 
 
 Recipe 0.1.75 now activates the source-resolution artwork path locally. All six
-2816×1536 backgrounds use lossless tiles with filtering halos; the menu reuses
+2816×1536 backgrounds use lossless tiles with filtering native ports; the menu reuses
 background1. The package contains 178 images, all five original-rate effects
 and all nine original music tracks. The selected signed profile raises the game
 hard/recommended memory to 256 MiB; the effect/music shares remain 3/7 MiB.
@@ -4863,15 +4705,6 @@ all six dense scenes, every tile hash, original audio and exact parent/guest
 budgets and complete release. The complete browser save/corruption/restart
 matrix passes with the new resources. All 178 PNGs match independent Node and
 actual Chromium decoder hashes; malformed PNG rejection is unchanged.
-
-The earlier 0.1.74 renderer, 42 derived background images, provenance and license
-texts are frozen in the host's `tests/fixtures/arkanoo-legacy-artwork.zip`, with
-per-file and archive hashes. `copy_legacy_port` restores only that artwork and
-renderer, removes the opt-in profile and retains the 16 MiB legacy hard cap and
-8 MiB frame cap. Other game logic remains current. The separate 48 kHz clips
-remain unchanged. These are test fixtures, not additional files in the playable
-package; no player Python dependency is introduced. Historical audio/profile
-qualification above remains specific to the smaller legacy fixture.
 
 
 The preserved `eff565f` broad Rust runs 40556249072 and 40556260664 both fail in

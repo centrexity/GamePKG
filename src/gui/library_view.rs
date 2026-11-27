@@ -128,23 +128,7 @@ impl App {
                 .is_some_and(|paths| crate::rom_selections::ready_for(m, paths))
     }
     pub(super) fn ready_to_play(&self, m: &crate::manifest::Manifest) -> bool {
-        crate::native::play_supported(m)
-            && self.built.contains(&m.id)
-            && !self.needs_rom(m)
-            && (m.builtin_engine.as_deref() != Some(crate::takedawn::PROFILE)
-                || self
-                    .applied_settings
-                    .as_ref()
-                    .is_some_and(|s| s.memory_ceiling_mib >= 4096))
-            && (m.game_data.is_none()
-                || (self
-                    .data_paths
-                    .get(&m.id)
-                    .is_some_and(|p| crate::game_data::available_for(m, std::path::Path::new(p)))
-                    && self
-                        .applied_settings
-                        .as_ref()
-                        .is_some_and(|s| s.memory_ceiling_mib >= 2048)))
+        self.play_blockers(m).is_empty()
     }
     pub(super) fn library_filters(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {

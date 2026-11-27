@@ -1,10 +1,6 @@
 use eframe::egui;
 mod add_page;
 mod app_updates;
-mod artwork;
-mod cube2_input;
-mod display;
-mod doom_input;
 mod drops;
 mod game_colors;
 mod game_page;
@@ -14,9 +10,7 @@ mod library_view;
 pub(crate) mod linear_sprites;
 mod multiplayer;
 mod processes;
-mod recordings;
 mod rom_picker;
-mod snapshot_slots;
 mod source_input;
 mod sprites;
 mod storage;
@@ -36,9 +30,6 @@ enum Work {
         Option<(String, crate::server_selections::Selection)>,
     ),
     NetworkSaved(String, crate::server_selections::Selection),
-    VideoSaved(String, Option<crate::manifest::ZeldaVideo>),
-    Recordings(recordings::Loaded),
-    RecordingExported(String),
     Store(crate::store::Bundle),
     Preview(Vec<Vec<u8>>),
     Game(Box<crate::runtime::Game>),
@@ -67,8 +58,6 @@ pub struct App {
     rom_paths: HashMap<String, Vec<String>>,
     data_paths: HashMap<String, String>,
     network_drafts: HashMap<String, multiplayer::Draft>,
-    video_drafts: HashMap<String, display::Draft>,
-    recordings: Option<recordings::Loaded>,
     rom_path: String,
     rom_game: Option<String>,
     rom_identity: Option<String>,
@@ -79,7 +68,6 @@ pub struct App {
     show_add: bool,
     show_settings: bool,
     focus_memory_settings: bool,
-    focus_tick_settings: bool,
     app_release: Option<crate::app_updates::Release>,
     app_installed: Option<PathBuf>,
     startup_app_check: Option<mpsc::Receiver<Result<Option<crate::app_updates::Release>, String>>>,
@@ -101,13 +89,8 @@ pub struct App {
     startup_vsync: Option<bool>,
     window_preferences_active: bool,
     pending_window_maximize: bool,
-    cube_mouse_capture: cube2_input::MouseCapture,
-    confine_mouse: bool,
     source_input: source_input::Capture,
     source_window: window_control::Controller,
-    cube_desktop: cube2_input::Desktop,
-    doom_desktop: doom_input::Desktop,
-    snapshot_desktop: snapshot_slots::Desktop,
     game_processes: Vec<(String, std::process::Child)>,
     next_frame: Option<std::time::Instant>,
     pending_input: u32,
@@ -232,15 +215,7 @@ impl App {
         self.preview = None;
         self.support_copied = None;
     }
-    pub fn set_native_display(&mut self, cc: &eframe::CreationContext<'_>) {
-        use eframe::egui_wgpu::wgpu::rwh::{HasDisplayHandle, RawDisplayHandle};
-        self.confine_mouse = cc.display_handle().is_ok_and(|handle| {
-            matches!(
-                handle.as_raw(),
-                RawDisplayHandle::Xlib(_) | RawDisplayHandle::Xcb(_) | RawDisplayHandle::Windows(_)
-            )
-        });
-    }
+    pub fn set_native_display(&mut self, _: &eframe::CreationContext<'_>) {}
     pub fn new(play: Option<String>, gl: Option<std::sync::Arc<eframe::glow::Context>>) -> Self {
         Self::new_with_target(play, gl, None)
     }
@@ -319,7 +294,6 @@ impl App {
         }
     }
     fn refresh(&mut self, ctx: &egui::Context) {
-        self.recordings = None;
         match crate::registry::default_root() {
             Ok(root) => self.request_library(root, ctx),
             Err(error) => {
@@ -372,12 +346,6 @@ impl App {
         let verified = report.verified;
         let scopes: HashSet<String> = games.iter().filter_map(multiplayer::scope).collect();
         self.network_drafts.retain(|key, _| scopes.contains(key));
-        let video_scopes: HashSet<String> = games
-            .iter()
-            .filter_map(|m| crate::video_selections::identity(m).ok())
-            .collect();
-        self.video_drafts
-            .retain(|key, _| video_scopes.contains(key));
         self.icons.clear();
         self.package_notices.clear();
         self.built.clear();
@@ -390,19 +358,6 @@ impl App {
         self.storage_scanner
             .request(root.clone(), games.clone(), ctx.clone());
         for m in &games {
-            if let Ok(scope) = crate::video_selections::identity(m) {
-                match crate::video_selections::load(&root, m) {
-                    Ok(selection) => self
-                        .video_drafts
-                        .entry(scope)
-                        .or_default()
-                        .loaded(selection),
-                    Err(error) => {
-                        self.status = format!("Unable to read display settings: {error:#}")
-                    }
-                }
-            }
-
             if let Some(scope) = multiplayer::scope(m) {
                 match crate::server_selections::load(&root, m) {
                     Ok(selection) => self
@@ -473,20 +428,6 @@ impl App {
                     icon.as_raw(),
                 ))
             })();
-            let decoded = decoded.or_else(|error| -> anyhow::Result<_> {
-                let (bytes, notice) = artwork::fallback(&m.id).ok_or(error)?;
-                let icon = image::load_from_memory(bytes)?.to_rgba8();
-                self.package_notices
-                    .entry(m.id.clone())
-                    .or_default()
-                    .push_str(&format!(
-                        "\n\nLibrary fallback artwork, provided by GamePKG:\n{notice}"
-                    ));
-                Ok(egui::ColorImage::from_rgba_unmultiplied(
-                    [icon.width() as usize, icon.height() as usize],
-                    icon.as_raw(),
-                ))
-            });
             if let Ok(icon) = decoded {
                 self.icons.insert(
                     m.id.clone(),
@@ -588,12 +529,10 @@ impl eframe::App for App {
             ctx.viewport_id(),
             !self.game_window_closing
                 && !file_dialog_open
-                && self.player.as_ref().is_some_and(|game| {
-                    game.doom_input_allowed()
-                        || game.is_cube2()
-                        || game.input_events_allowed()
-                        || game.supports_zelda_snapshot_slots()
-                }),
+                && self
+                    .player
+                    .as_ref()
+                    .is_some_and(|game| game.input_events_allowed()),
             ctx.input(|i| i.focused) && !file_dialog_open,
         );
         egui_winit::gamepkg_input::enable_surface(
@@ -678,13 +617,6 @@ impl eframe::App for App {
                             self.status = format!("Opened {id} in its own window.");
                             self.game_processes.push((id, child));
                         }
-                        Ok(Work::Recordings(loaded)) => self.loaded_recordings(loaded),
-                        Ok(Work::RecordingExported(message)) => self.status = message,
-                        Ok(Work::VideoSaved(scope, selection)) => {
-                            self.video_drafts.insert(scope, selection.into());
-                            self.status = "Display settings saved for the next launch.".into();
-                            self.refresh(ctx);
-                        }
                         Ok(Work::NetworkSaved(scope, selection)) => {
                             self.network_drafts.insert(scope, selection.into());
                             self.status = "Multiplayer settings saved for the next launch.".into();
@@ -710,8 +642,6 @@ impl eframe::App for App {
                             self.status = "Preview ready.".into();
                         }
                         Ok(Work::Game(mut game)) => {
-                            self.cube_mouse_capture = Default::default();
-                            self.cube_desktop = Default::default();
                             self.preview = None;
                             self.gpu = None;
                             self.vulkan = None;
@@ -786,9 +716,6 @@ impl eframe::App for App {
                                 self.status = format!("Unable to play: {error:#}");
                                 return;
                             }
-                            game.cube2_audio_sink(
-                                self.audio_player.as_ref().map(crate::audio::Player::sink),
-                            );
                             if let Some(audio) = &self.audio_player {
                                 match game.effect_playback() {
                                     Ok(Some(playback)) => {
@@ -928,9 +855,6 @@ impl eframe::App for App {
             self.input_devices.reset();
             self.keyboard.reset();
             self.source_input = Default::default();
-            self.doom_desktop = Default::default();
-            self.snapshot_desktop = Default::default();
-            self.cube_desktop = Default::default();
             self.sprite_textures.finish(0);
             self.linear_sprites.clear();
         }
@@ -938,171 +862,16 @@ impl eframe::App for App {
             let mut image_count = 0;
             let mut linear_count = 0;
             let mut failure = None;
-            if game.supports_zelda_snapshot_slots() && !file_dialog_open {
-                let events = egui_winit::gamepkg_input::take(ctx.viewport_id());
-                if let Some(action) = ctx.input(|input| {
-                    self.snapshot_desktop.request(
-                        &events,
-                        input,
-                        self.applied_settings
-                            .as_ref()
-                            .unwrap_or(&self.settings_draft),
-                    )
-                }) {
-                    let result = crate::registry::default_root().and_then(|root| match action {
-                        snapshot_slots::Action::Save(slot) => game.save_zelda_slot(&root, slot),
-                        snapshot_slots::Action::Load(slot) => game.load_zelda_slot(&root, slot),
-                    });
-                    match result {
-                        Ok(()) => {
-                            if matches!(action, snapshot_slots::Action::Load(_)) {
-                                self.pending_input = 0;
-                                self.next_frame = None;
-                                if let Some(audio) = &self.audio_player {
-                                    audio.clear();
-                                }
-                            }
-                        }
-                        Err(error) => {
-                            rfd::MessageDialog::new()
-                                .set_title("Snapshot slot")
-                                .set_description(format!("{error:#}"))
-                                .set_level(rfd::MessageLevel::Error)
-                                .show();
-                        }
-                    }
-                }
-            }
-            let select_input = ctx.input(|i| {
-                u32::from(input::key_edge(i, egui::Key::Tab)) << 7
-                    | u32::from(i.key_down(egui::Key::Tab)) << 15
-            });
-            if game.builtin_engine && !game.is_cube2() {
-                ctx.input_mut(|i| {
-                    i.events.retain(|event| {
-                        !matches!(
-                            event,
-                            egui::Event::Key {
-                                key: egui::Key::Tab,
-                                ..
-                            }
-                        )
-                    })
-                });
-                if let Some(id) = ctx.memory(|m| m.focused()) {
-                    ctx.memory_mut(|m| m.surrender_focus(id));
-                }
-            }
             egui::CentralPanel::default()
                 .frame(egui::Frame::NONE.fill(egui::Color32::BLACK))
                 .show(ctx, |ui| {
-                    // Cube 2 receives physical keys once through its native queue.
-                    // Only controller/touch devices use the portable action mapping.
-                    let input = if game.is_cube2() {
-                        0
-                    } else {
-                        select_input | ctx.input(|i| self.keyboard.poll(i))
-                    };
-                    let device_input = self.input_devices.poll(ui, game.is_cube2() || game.doom_input_allowed());
+                    let keyboard = ctx.input(|i| self.keyboard.poll(i));
+                    let device_input = self.input_devices.poll(ui, false);
                     let input = if ctx.input(|i| i.focused) && !file_dialog_open {
-                        input | device_input
+                        keyboard | device_input
                     } else {
                         self.pending_input = 0;
                         0
-                    };
-                    if game.is_cube2() {
-                        let (width, height) = cube2_input::resolution(
-                            ui.available_size(),
-                            ctx.pixels_per_point(),
-                            self.applied_settings
-                                .as_ref()
-                                .filter(|s| s.render_limit_enabled)
-                                .map(|s| (s.render_max_width, s.render_max_height)),
-                        );
-                        game.cube2_resize(width, height);
-                        let (dx, dy, focused) = ctx.input(|i| {
-                            let motion = i
-                                .events
-                                .iter()
-                                .filter_map(|e| {
-                                    if let egui::Event::MouseMoved(delta) = e {
-                                        Some(*delta)
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .fold(egui::Vec2::ZERO, |a, b| a + b);
-                            (motion.x.round() as i32, motion.y.round() as i32, i.focused)
-                        });
-                        let (captured, recaptured) = self.cube_mouse_capture.update(
-                            focused && !file_dialog_open,
-                            ctx.input(cube2_input::release_requested),
-                            ctx.input(|i| i.pointer.primary_clicked()),
-                        );
-                        cube2_input::MouseCapture::apply(ctx, captured, self.confine_mouse);
-                        let (look_x, look_y) = self.input_devices.look_delta();
-                        let native_events = egui_winit::gamepkg_input::take(ctx.viewport_id());
-                        if let Err(error) = self.cube_desktop.forward(
-                            game,
-                            &native_events,
-                            captured,
-                            recaptured,
-                            ctx.pixels_per_point(),
-                        ) {
-                            failure = Some(format!("Game stopped: {error:#}"));
-                        }
-                        if captured {
-                            game.cube2_desktop_input(
-                                0,
-                                if recaptured {
-                                    0
-                                } else {
-                                    dx.saturating_add(look_x)
-                                },
-                                if recaptured {
-                                    0
-                                } else {
-                                    dy.saturating_add(look_y)
-                                },
-                            );
-                        } else {
-                            game.cube2_clear_input();
-                        }
-                    }
-                    if game.doom_input_allowed() {
-                        let focused = ctx.input(|i| i.focused);
-                        let (captured, recaptured) = self.cube_mouse_capture.update(
-                            focused && !file_dialog_open,
-                            ctx.input(cube2_input::release_requested),
-                            ctx.input(|i| i.pointer.primary_clicked()),
-                        );
-                        cube2_input::MouseCapture::apply(ctx, captured, self.confine_mouse);
-                        let events = egui_winit::gamepkg_input::take(ctx.viewport_id());
-                        let (look_x, look_y) = self.input_devices.look_delta();
-                        if let Err(error) = self
-                            .doom_desktop
-                            .forward(game, &events, captured, recaptured)
-                        {
-                            failure = Some(format!("Game stopped: {error:#}"));
-                        }
-                        if captured {
-                            if let Err(error) = self.doom_desktop.controller_look(
-                                game,
-                                if recaptured { 0 } else { look_x },
-                                if recaptured { 0 } else { look_y },
-                            ) {
-                                failure = Some(format!("Game stopped: {error:#}"));
-                            }
-                        }
-                    }
-                    let input = if game.doom_engine || game.is_cube2() {
-                        if self.cube_mouse_capture.captured() {
-                            device_input
-                        } else {
-                            0
-                        }
-                    } else {
-                        input
                     };
                     if game.input_events_allowed() {
                         let scale = (ui.available_width() / 640.0)
@@ -1113,7 +882,7 @@ impl eframe::App for App {
                             egui::vec2(640.0 * scale, 480.0 * scale),
                         );
                         let events = egui_winit::gamepkg_input::take(ctx.viewport_id());
-                        let release = ctx.input(cube2_input::release_requested);
+                        let release = ctx.input(window_control::release_requested);
                         self.source_input.confine(self.source_window.confined());
                         let captured = if release {
                             self.source_input = Default::default();
@@ -1184,33 +953,17 @@ impl eframe::App for App {
                             (session.preferences.height as f32*native_scale).round() as u32,
                         ]);
                     }
-                    if !game.builtin_engine {
-                        self.source_window
-                            .apply(ctx, game.window_state(), file_dialog_open);
-                    } else {
-                        self.source_window.apply_display(
-                            ctx,
-                            game.window_state(),
-                            file_dialog_open,
-                        );
-                    }
+                    self.source_window
+                        .apply(ctx, game.window_state(), file_dialog_open);
                     if let Some(error) = self.audio_player.as_ref().and_then(|a| a.error()) {
                         self.audio_error = format!("Sound stopped: {error}");
                         self.audio_player = None;
-                        game.cube2_audio_sink(None);
                     }
                     if game.custom_renderer {
                         let scale = (ui.available_width() / 640.0)
                             .min(ui.available_height() / 480.0)
                             .max(0.0);
-                        let display_size = if let Some((width, height)) = game.cube2_frame_size() {
-                            let native = egui::vec2(width as f32, height as f32);
-                            native
-                                * (ui.available_width() / native.x)
-                                    .min(ui.available_height() / native.y)
-                        } else {
-                            egui::vec2(640.0 * scale, 480.0 * scale)
-                        };
+                        let display_size = egui::vec2(640.0 * scale, 480.0 * scale);
                         let rect =
                             egui::Rect::from_center_size(ui.max_rect().center(), display_size);
                         let image_scale = egui::vec2(rect.width() / 640.0, rect.height() / 480.0);
@@ -1426,16 +1179,9 @@ impl eframe::App for App {
             self.sprite_textures.finish(image_count);
             self.linear_sprites.finish(linear_count);
             self.observe_window_preferences(ctx, restoring_maximize);
-            if self.player.as_ref().is_some_and(|game| game.is_cube2()) {
-                ctx.request_repaint();
-            } else {
-                ctx.request_repaint_after(std::time::Duration::from_millis(16));
-            }
+            ctx.request_repaint_after(std::time::Duration::from_millis(16));
             let exited = self.player.as_ref().is_some_and(|game| game.exited());
             if failure.is_some() || exited {
-                // Release capture before the next frame can open a native error
-                // dialog; blocking the event loop while grabbed traps the cursor.
-                self.cube_mouse_capture.release(ctx, self.confine_mouse);
                 self.source_window.release(ctx);
                 if let Some(game) = &mut self.player {
                     if let Err(e) = game.finish() {
@@ -1665,7 +1411,6 @@ impl eframe::App for App {
                 ui.label("Choose how GamePKG stores, builds, and runs your games.");
                 egui::ScrollArea::vertical().max_height((ui.available_height() - 110.0).max(100.0)).show(ui,|ui| {
                     self.app_update_controls(ui, ctx);
-                    snapshot_slots::settings(ui, &mut self.settings_draft);
                     ui.heading("Library");
                     ui.label("Library folder (absolute path; leave empty for the default)");
                     ui.text_edit_singleline(&mut self.settings_draft.library_directory);
@@ -1679,8 +1424,7 @@ impl eframe::App for App {
                     ui.separator();ui.heading("Game resource ceilings");
                     let memory_control = ui.horizontal(|ui| { ui.label("Memory ceiling (MiB)");ui.add(egui::DragValue::new(&mut self.settings_draft.memory_ceiling_mib).range(1..=4096)) }).inner;
                     if self.focus_memory_settings { memory_control.scroll_to_me(Some(egui::Align::Center));self.focus_memory_settings=false; }
-                    let tick_control = ui.horizontal(|ui| { ui.label("Tick deadline (ms)");ui.add(egui::Slider::new(&mut self.settings_draft.tick_deadline_ms,10..=1000).step_by(10.0)) }).inner;
-                    if self.focus_tick_settings { tick_control.scroll_to_me(Some(egui::Align::Center));self.focus_tick_settings=false; }
+                    ui.horizontal(|ui| { ui.label("Tick deadline (ms)");ui.add(egui::Slider::new(&mut self.settings_draft.tick_deadline_ms,10..=1000).step_by(10.0)); });
                     let mut watchdog_enabled = self.settings_draft.native_watchdog_seconds != 0;
                     if ui.checkbox(&mut watchdog_enabled,"Native frame-stall watchdog (diagnostic reports)").changed() {
                         self.settings_draft.native_watchdog_seconds = if watchdog_enabled { 30 } else { 0 };
@@ -1709,18 +1453,6 @@ impl eframe::App for App {
                     ui.label("Larger text and controls apply when you save. Display scaling also follows your system settings.");
                     #[cfg(windows)]
                     {
-                        ui.heading("Native build tools");
-                        ui.label("Download and verify the tools for native engine builds. These tools do not use Python or WSL.");
-                        ui.label("About 485 MB to download; about 2.4 GB of disk space including cached downloads.");
-                        if ui.add_enabled(self.result.is_none(), egui::Button::new("Prepare native build tools")).clicked() {
-                            let root = crate::registry::default_root();
-                            self.status = "Preparing native build tools…".into();
-                            self.begin_work(move || {
-                                crate::takedawn::prepare_windows_tools(&root?)?;
-                                Ok(Work::Message("Native build tools are ready.".into()))
-                            });
-                        }
-                        ui.add_space(12.0);
                         ui.heading("Windows compiler");
                         ui.label("WSL 2 distribution name (leave both fields empty to disable)");
                         ui.text_edit_singleline(&mut self.settings_draft.windows_compiler_distribution);
@@ -1906,7 +1638,7 @@ mod rom_selection_tests {
         let a = tempfile::tempdir().unwrap();
         let b = tempfile::tempdir().unwrap();
         let mut m: crate::manifest::Manifest =
-            toml::from_str(include_str!("../ports/doom/manifest.toml")).unwrap();
+            toml::from_str(include_str!("../examples/minimal/manifest.toml")).unwrap();
         let first = rom_identity(a.path(), &m);
         m.version = "99.0.0".into();
         assert_eq!(first, rom_identity(a.path(), &m));
@@ -1959,7 +1691,7 @@ mod async_library_tests {
         let (release, released) = mpsc::channel();
         let released = Arc::new(Mutex::new(released));
         let mut manifest: crate::manifest::Manifest =
-            toml::from_str(include_str!("../ports/doom/manifest.toml")).unwrap();
+            toml::from_str(include_str!("../examples/minimal/manifest.toml")).unwrap();
         manifest.requires_rom = false;
         let expected_id = manifest.id.clone();
         let report_manifest = manifest.clone();

@@ -35,11 +35,11 @@ fn native_color_and_fixed_little_endian_stream_contracts_are_distinct() {
     assert!(__gamepkg_engine_little_endian(1, true));
 
     let mut native_big = [0x7f, 0x12, 0x34, 0x56];
-    let mut doom_stream = [0x56, 0x34, 0x12, 0];
+    let mut rgba_stream = [0x56, 0x34, 0x12, 0];
     __gamepkg_engine_rgba(&mut native_big, false);
-    __gamepkg_engine_rgba(&mut doom_stream, true);
+    __gamepkg_engine_rgba(&mut rgba_stream, true);
     assert_eq!(native_big, [0x12, 0x34, 0x56, 255]);
-    assert_eq!(native_big, doom_stream);
+    assert_eq!(native_big, rgba_stream);
     let mut ending_big = [0xff, 0xa8, 0, 0];
     __gamepkg_engine_rgba(&mut ending_big, false);
     assert_eq!(ending_big, [0xa8, 0, 0, 255]);

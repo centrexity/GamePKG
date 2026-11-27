@@ -326,36 +326,6 @@ def click_primary_play(window, env, directory, timeout=15):
         time.sleep(.1)
 
 
-def cube2_choose_test_map(window, env):
-    """Choose a gameplay fixture through original console input, never launch overrides."""
-    subprocess.run(['xdotool','windowfocus',window,'key','slash'],env=env,check=True)
-    time.sleep(.3)
-    subprocess.run(['xdotool','type','--clearmodifiers','--delay','15','mode 0; map complex; showgui ""'],env=env,check=True)
-    subprocess.run(['xdotool','key','Return'],env=env,check=True)
-    # Wait for the requested map instead of treating the cached menu/loading
-    # image as gameplay. No engine launch flags or hidden startup scripts.
-    import tempfile
-    from pathlib import Path
-    with tempfile.TemporaryDirectory(prefix='cube2-chosen-map-') as directory:
-        capture=Path(directory)/'frame.png'
-        deadline=time.monotonic()+65
-        while True:
-            subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(capture)],env=env,check=True)
-            from PIL import Image,ImageOps
-            image=Image.open(capture).convert('RGB')
-            health=image.crop((0,int(image.height*.86),int(image.width*.32),image.height))
-            health=ImageOps.grayscale(health).point(lambda p:0 if p>180 else 255).resize((health.width*3,health.height*3))
-            hud=Path(directory)/'health.png';health.save(hud)
-            # The HUD is one outlined line; block segmentation can split the
-            # health digits into its icon or neighboring ammunition count.
-            for segmentation in ['6','7']:
-                text=subprocess.check_output(['tesseract',str(hud),'stdout','--psm',segmentation,'-c','tessedit_char_whitelist=0123456789'],env=dict(env,OMP_THREAD_LIMIT='1'),stderr=subprocess.DEVNULL,text=True)
-                if '100' in ''.join(text.split()):break
-            if '100' in ''.join(text.split()):break
-            assert time.monotonic()<deadline,'Original console did not enter the requested gameplay map: '+text
-            time.sleep(.3)
-
-
 def capture_native_failure(env, directory, app=None):
     """Capture only the fixture's private display after its assertion fails."""
     from pathlib import Path

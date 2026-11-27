@@ -8,10 +8,10 @@ use std::{
 };
 pub(crate) fn identity(manifest: &Manifest) -> Result<String> {
     ensure!(
-        manifest.game_data.as_ref().is_some_and(|data| {
-            manifest.builtin_engine.as_deref() == Some(crate::cube2::PROFILE)
-                || !data.layouts.is_empty()
-        }),
+        manifest
+            .game_data
+            .as_ref()
+            .is_some_and(|data| !data.layouts.is_empty()),
         "this game does not request a supported data folder"
     );
     Ok(crate::verify::digest(&serde_json::to_vec(&(
@@ -535,10 +535,6 @@ max_bytes = 1024
             NATIVE_LAYOUT.replace(r#""packages", "data""#, r#""../packages", "data""#),
             NATIVE_LAYOUT.replace("max_bytes = 1024", "max_bytes = 8589934593"),
             NATIVE_LAYOUT.replace("min_bytes = 1", "min_bytes = 2048"),
-            NATIVE_LAYOUT.replace(
-                "[[game_data.layouts]]",
-                "user_selected_servers = true\n[[game_data.layouts]]",
-            ),
         ] {
             assert!(parse_native_layout(&layout).is_err(), "{layout}");
         }

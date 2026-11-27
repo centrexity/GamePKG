@@ -7,7 +7,7 @@ use gamepkg::port_host::preparation::{LocalLayout, Plan, Target};
 use gamepkg::port_host::{admission::CheckedSources, preparation};
 
 #[cfg(target_os = "linux")]
-fn assert_doom_object_receipts(receipt: &preparation::ExecutableReceipt) {
+fn assert_port_object_receipts(receipt: &preparation::ExecutableReceipt) {
     assert!(receipt
         .arguments
         .iter()
@@ -23,14 +23,14 @@ fn assert_doom_object_receipts(receipt: &preparation::ExecutableReceipt) {
 
 #[cfg(target_os = "linux")]
 #[test]
-#[ignore = "requires a signed Doom migration package and the reviewed Windows cross-toolchains"]
-fn signed_doom_native_objects_pass_windows_admission() {
-    let package = std::env::var_os("GAMEPKG_TEST_DOOM_NATIVE_PACKAGE")
-        .expect("select the signed native Doom test package");
+#[ignore = "requires a signed native port migration package and the reviewed Windows cross-toolchains"]
+fn signed_port_native_objects_pass_windows_admission() {
+    let package = std::env::var_os("GAMEPKG_TEST_PORT_NATIVE_PACKAGE")
+        .expect("select the signed native port test package");
     let mut package = gamepkg::archive::Package::open(std::path::Path::new(&package)).unwrap();
     let sources = CheckedSources::verify(&mut package).unwrap();
     let manifest = sources.manifest();
-    assert_eq!(manifest.id, "com.gamepkg.doom");
+    assert_eq!(manifest.id, "com.gamepkg.port");
     assert!(manifest.uses_service_runtime());
     let cache = tempfile::tempdir().unwrap();
     for target in [Target::Windows64, Target::Windows32] {
@@ -43,25 +43,25 @@ fn signed_doom_native_objects_pass_windows_admission() {
         let receipt = artifact.receipt();
         assert_eq!(receipt.game.source_kit, sources.identity());
         assert_eq!(receipt.game.sdk, gamepkg::port_host::build_identity());
-        assert_doom_object_receipts(receipt);
+        assert_port_object_receipts(receipt);
         assert!(artifact.executable().unwrap().is_file());
     }
 }
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64", feature = "gui"))]
 #[test]
-#[ignore = "requires a signed Doom migration package and the reviewed Windows cross-toolchains"]
-fn signed_doom_links_the_windows_compatibility_runtime() {
+#[ignore = "requires a signed native port migration package and the reviewed Windows cross-toolchains"]
+fn signed_port_links_the_windows_compatibility_runtime() {
     use gamepkg::port_host::preparation::Bootstrap;
-    let package = std::env::var_os("GAMEPKG_TEST_DOOM_NATIVE_PACKAGE")
-        .expect("select the signed native Doom test package");
+    let package = std::env::var_os("GAMEPKG_TEST_PORT_NATIVE_PACKAGE")
+        .expect("select the signed native port test package");
     let mut package = gamepkg::archive::Package::open(std::path::Path::new(&package)).unwrap();
     let sources = CheckedSources::verify(&mut package).unwrap();
-    assert_eq!(sources.manifest().id, "com.gamepkg.doom");
+    assert_eq!(sources.manifest().id, "com.gamepkg.port");
     let cache = tempfile::tempdir().unwrap();
     for (target, filename) in [
-        (Target::Windows64, "doom-compatibility-x64.exe"),
-        (Target::Windows32, "doom-compatibility-x86.exe"),
+        (Target::Windows64, "port-compatibility-x64.exe"),
+        (Target::Windows32, "port-compatibility-x86.exe"),
     ] {
         let plan = Plan::new(target, "game_main", vec![], LocalLayout::None, true).unwrap();
         let artifact = preparation::build_in_process(cache.path(), &sources, &plan, None)
@@ -71,10 +71,10 @@ fn signed_doom_links_the_windows_compatibility_runtime() {
         assert_eq!(receipt.plan, plan);
         assert_eq!(receipt.game.source_kit, sources.identity());
         assert_eq!(receipt.game.sdk, gamepkg::port_host::build_identity());
-        assert_doom_object_receipts(receipt);
+        assert_port_object_receipts(receipt);
         let executable = artifact.executable().unwrap();
         assert!(executable.is_file());
-        if let Some(output) = std::env::var_os("GAMEPKG_TEST_DOOM_WINDOWS_OUTPUT") {
+        if let Some(output) = std::env::var_os("GAMEPKG_TEST_PORT_WINDOWS_OUTPUT") {
             std::fs::copy(executable, std::path::Path::new(&output).join(filename)).unwrap();
         }
     }
@@ -199,7 +199,7 @@ fn local_deadlines_execute_without_owner_dispatch_and_keep_every_object_audited(
         owner.stop().unwrap();
     }
     // Infrastructure qualification must not admit an unmigrated engine.
-    for profile in ["takedawn", "opence-ce95f7de"] {
+    for profile in ["port-owned-engine", "unknown"] {
         assert!(gamepkg::build_policy::require(Some(profile)).is_err());
     }
 }
@@ -337,7 +337,7 @@ fn local_join_evidence_is_unforgeable_and_every_object_remains_audited() {
     };
     assert!(denied.contains("private"), "{denied}");
     // Infrastructure qualification must not admit an unmigrated engine.
-    for profile in ["takedawn", "opence-ce95f7de"] {
+    for profile in ["port-owned-engine", "unknown"] {
         assert!(gamepkg::build_policy::require(Some(profile)).is_err());
     }
 }
@@ -350,7 +350,7 @@ fn reviewed_entry_metadata_cannot_inject_code_or_select_an_incompatible_layout()
         Target::Windows64,
         Target::Windows32,
     ] {
-        let plan = Plan::new(target, "game_main", vec![], LocalLayout::TakedawnRam, true).unwrap();
+        let plan = Plan::new(target, "game_main", vec![], LocalLayout::NativeRam, true).unwrap();
         let record = serde_json::to_vec(&plan).unwrap();
         assert_eq!(serde_json::from_slice::<Plan>(&record).unwrap(), plan);
         assert_ne!(
@@ -359,19 +359,12 @@ fn reviewed_entry_metadata_cannot_inject_code_or_select_an_incompatible_layout()
                 .unwrap()
                 .identity()
         );
-        let full = Plan::new(
-            target,
-            "game_main",
-            vec![],
-            LocalLayout::TakedawnMemory,
-            true,
-        )
-        .unwrap();
+        let full = Plan::new(target, "game_main", vec![], LocalLayout::NativeMemory, true).unwrap();
         let scratch = Plan::new(
             target,
             "game_main",
             vec![],
-            LocalLayout::TakedawnServices,
+            LocalLayout::NativeServices,
             true,
         )
         .unwrap();
@@ -398,7 +391,7 @@ fn reviewed_entry_metadata_cannot_inject_code_or_select_an_incompatible_layout()
         Target::Linux64,
         "game_main",
         vec![],
-        LocalLayout::HaloI686,
+        LocalLayout::I686FixedLayout,
         true
     )
     .is_err());
@@ -466,7 +459,7 @@ fn reviewed_entry_metadata_cannot_inject_code_or_select_an_incompatible_layout()
     for (field, value) in [
         ("entry", serde_json::json!("game_main();unsafe{bad()}")),
         ("tasks", serde_json::json!(["core::bad"])),
-        ("layout", serde_json::json!("HaloI686")),
+        ("layout", serde_json::json!("I686FixedLayout")),
         ("tasks", serde_json::json!(vec!["task"; 257])),
         ("unreviewed_flag", serde_json::json!(true)),
         ("codegen_units", serde_json::json!(0)),
@@ -569,7 +562,7 @@ fn separately_optimized_rust_objects_link_only_after_audit_and_bind_final_receip
         .err()
         .expect("game source must not install a trusted dispatcher");
     assert!(format!("{error:#}").contains("cannot find function `connect_local`"));
-    for profile in ["takedawn", "opence-ce95f7de"] {
+    for profile in ["port-owned-engine", "unknown"] {
         assert!(gamepkg::build_policy::require(Some(profile)).is_err());
     }
 }
@@ -981,7 +974,7 @@ pub fn game_main(){let status=match check_memory(){Ok(())=>0u64,Err(code)=>code 
         Target::Windows64,
         Target::Windows32,
     ] {
-        let plan = Plan::new(target, "game_main", vec![], LocalLayout::TakedawnRam, true)
+        let plan = Plan::new(target, "game_main", vec![], LocalLayout::NativeRam, true)
             .unwrap()
             .with_codegen_units(2)
             .unwrap();
@@ -1019,108 +1012,6 @@ pub fn game_main(){let status=match check_memory(){Ok(())=>0u64,Err(code)=>code 
         assert_eq!(events[0].code, 0x5345474d);
         assert_eq!(events[0].values, vec![0]);
         owner.stop().unwrap();
-    }
-}
-
-#[cfg(target_os = "linux")]
-#[test]
-#[ignore = "builds four audited targets and exercises three opaque memory banks in confined Linux children"]
-fn takedawn_memory_banks_are_distinct_bounded_and_nonexecutable() {
-    use gamepkg::port_host::{
-        owner::{Grants, Owner},
-        Backend, Frame, Result, WindowCommand,
-    };
-    struct Silent;
-    impl Backend for Silent {
-        fn window(&mut self, _: WindowCommand) -> Result<()> {
-            Err(gamepkg::port_host::Error::Unsupported)
-        }
-        fn present(&mut self, _: Frame) -> Result<()> {
-            Err(gamepkg::port_host::Error::Unsupported)
-        }
-        fn audio(&mut self, _: &[i16], _: u32) -> Result<()> {
-            Err(gamepkg::port_host::Error::Unsupported)
-        }
-        fn rumble(&mut self, _: u64, _: u16, _: u16, _: u32) -> Result<()> {
-            Err(gamepkg::port_host::Error::Unsupported)
-        }
-    }
-    let root = tempfile::tempdir().unwrap();
-    let mut files = helper::fixture("examples/minimal");
-    let mut manifest = gamepkg::manifest::Manifest::parse(&files["manifest.toml"]).unwrap();
-    manifest.limits.hard_memory_bytes = 384 * 1024 * 1024;
-    files.insert(
-        "manifest.toml".into(),
-        toml::to_string(&manifest).unwrap().into_bytes(),
-    );
-    files.insert(
-        "source/src/lib.rs".into(),
-        include_bytes!("fixtures/service_takedawn_memory.rs").to_vec(),
-    );
-    let package = helper::sign(&files, root.path());
-    let sources =
-        CheckedSources::verify(&mut gamepkg::archive::Package::open(&package).unwrap()).unwrap();
-    for target in [
-        Target::Linux64,
-        Target::Linux32,
-        Target::Windows64,
-        Target::Windows32,
-    ] {
-        let plan = Plan::new(
-            target,
-            "game_main",
-            vec![],
-            LocalLayout::TakedawnMemory,
-            true,
-        )
-        .unwrap()
-        .with_codegen_units(2)
-        .unwrap();
-        let artifact = preparation::build(root.path(), &sources, &plan, vec![], vec![]).unwrap();
-        artifact.executable().unwrap();
-        assert_eq!(artifact.receipt().plan, plan);
-        assert_eq!(
-            artifact.receipt().game.sdk,
-            gamepkg::port_host::build_identity()
-        );
-        assert_eq!(
-            artifact.receipt().raw_objects.len(),
-            artifact.receipt().game.objects.len()
-        );
-        println!("PASS {target:?}: separate-bank fixture source checked before bindings; every optimized game object audited before trusted linking");
-        if matches!(target, Target::Windows32 | Target::Windows64) {
-            continue;
-        }
-        let mut owner = Owner::start(
-            &artifact,
-            Silent,
-            Grants::default(),
-            256 * 1024 * 1024,
-            || {},
-        )
-        .unwrap();
-        let end = std::time::Instant::now() + std::time::Duration::from_secs(15);
-        let mut events = Vec::new();
-        loop {
-            owner.dispatch(32);
-            let (batch, lost) = owner.host.take_diagnostics();
-            assert_eq!(lost, 0);
-            events.extend(batch);
-            if let Some(code) = owner.poll().unwrap() {
-                assert_eq!(code, 0, "{}", owner.diagnostics());
-                break;
-            }
-            assert!(std::time::Instant::now() < end, "{}", owner.diagnostics());
-            std::thread::sleep(std::time::Duration::from_millis(1));
-        }
-        let (batch, lost) = owner.host.take_diagnostics();
-        assert_eq!(lost, 0);
-        events.extend(batch);
-        assert_eq!(events.len(), 1, "{}", owner.diagnostics());
-        assert_eq!(events[0].code, 0x544b0700);
-        assert_eq!(events[0].values, vec![0]);
-        owner.stop().unwrap();
-        println!("PASS {target:?}: actual confined main/contiguous/flash bank isolation, protection, copy and late-failure atomicity; silent/synthetic");
     }
 }
 
@@ -1304,7 +1195,7 @@ fn service_scratch_memory_is_private_bounded_and_atomic_without_larger_records()
             target,
             "game_main",
             vec![],
-            LocalLayout::TakedawnServices,
+            LocalLayout::NativeServices,
             true,
         )
         .unwrap()
@@ -1513,7 +1404,7 @@ fn local_semaphores_execute_without_owner_dispatch_and_keep_every_object_audited
         owner.stop().unwrap();
     }
     // Infrastructure qualification must not admit an unmigrated engine.
-    for profile in ["takedawn", "opence-ce95f7de"] {
+    for profile in ["port-owned-engine", "unknown"] {
         assert!(gamepkg::build_policy::require(Some(profile)).is_err());
     }
 }
@@ -1668,7 +1559,7 @@ fn local_wait_sets_are_atomic_and_keep_every_object_audited() {
         owner.stop().unwrap();
     }
     // Infrastructure qualification must not admit an unmigrated engine.
-    for profile in ["takedawn", "opence-ce95f7de"] {
+    for profile in ["port-owned-engine", "unknown"] {
         assert!(gamepkg::build_policy::require(Some(profile)).is_err());
     }
 }

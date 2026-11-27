@@ -1100,7 +1100,7 @@ fn task_completion_snapshots_do_not_resume_consume_or_cross_runtime_boundaries()
 }
 
 #[test]
-fn separate_takedawn_backings_charge_all_banks_and_revoke_together() {
+fn separate_native_backings_charge_all_banks_and_revoke_together() {
     let banks = [
         Window {
             address: 0x20000000,

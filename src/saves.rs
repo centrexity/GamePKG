@@ -58,7 +58,7 @@ pub(crate) fn previous_blob(
         Err(error) => return Err(error.into()),
     };
     let metadata = file.metadata()?;
-    let limit = crate::doom::SAVE_MAX;
+    let limit = MAX_SAVE;
     anyhow::ensure!(
         metadata.is_file() && MetadataExt::nlink(&metadata) == 1 && metadata.len() <= limit as u64,
         "previous save must be a bounded, unaliased regular file"
@@ -74,22 +74,12 @@ pub(crate) fn previous_blob(
 
 impl Save {
     pub fn open_for_game(root: &Path, manifest: &crate::manifest::Manifest) -> Result<Self> {
-        if manifest.builtin_engine.as_deref() == Some(crate::doom::PROFILE) {
-            Self::open_with_limit(
-                root,
-                &manifest.id,
-                &manifest.creator_key,
-                manifest.save_schema,
-                crate::doom::SAVE_MAX,
-            )
-        } else {
-            Self::open(
-                root,
-                &manifest.id,
-                &manifest.creator_key,
-                manifest.save_schema,
-            )
-        }
+        Self::open(
+            root,
+            &manifest.id,
+            &manifest.creator_key,
+            manifest.save_schema,
+        )
     }
     pub fn open(root: &Path, id: &str, creator: &str, schema: u32) -> Result<Self> {
         Self::open_with_limit(root, id, creator, schema, MAX_SAVE)
@@ -101,7 +91,7 @@ impl Save {
         schema: u32,
         max_bytes: usize,
     ) -> Result<Self> {
-        if max_bytes == 0 || max_bytes > crate::doom::SAVE_MAX {
+        if max_bytes == 0 || max_bytes > MAX_SAVE {
             bail!("invalid scoped save limit");
         }
         if schema == 0 {
@@ -252,7 +242,7 @@ mod tests {
         std::fs::remove_file(&save.path).unwrap();
         std::fs::File::create(&save.path)
             .unwrap()
-            .set_len(crate::doom::SAVE_MAX as u64 + 1)
+            .set_len(MAX_SAVE as u64 + 1)
             .unwrap();
         assert!(previous_blob(root.path(), &manifest).is_err());
         std::fs::rename(root.path().join("saves"), root.path().join("moved")).unwrap();
@@ -305,23 +295,20 @@ mod tests {
         );
     }
     #[test]
-    fn larger_doom_storage_does_not_expand_ordinary_save_limits() {
+    fn save_limit_is_bounded_for_every_manifest() {
         let root = tempfile::tempdir().unwrap();
         let mut manifest: crate::manifest::Manifest =
-            toml::from_str(include_str!("../tests/fixtures/doom-legacy/manifest.toml")).unwrap();
+            toml::from_str(include_str!("../examples/minimal/manifest.toml")).unwrap();
+        manifest.id = "com.gamepkg.test.save-limit".into();
+        manifest.permissions.save = true;
         let mut save = Save::open_for_game(root.path(), &manifest).unwrap();
         save.bytes = vec![0x5a; MAX_SAVE + 1];
         save.dirty = true;
-        save.commit().unwrap();
-        assert_eq!(
-            Save::open_for_game(root.path(), &manifest)
-                .unwrap()
-                .bytes
-                .len(),
-            MAX_SAVE + 1
-        );
-        manifest.builtin_engine = None;
-        assert!(Save::open_for_game(root.path(), &manifest).is_err());
+        assert!(save.commit().is_err());
+        assert!(Save::open_for_game(root.path(), &manifest)
+            .unwrap()
+            .bytes
+            .is_empty());
         let ordinary = tempfile::tempdir().unwrap();
         let mut save = Save::open(ordinary.path(), "ordinary", "creator", 1).unwrap();
         save.bytes = b"previous save".to_vec();

@@ -233,7 +233,7 @@ mod platform {
 #[cfg(windows)]
 mod platform {
     use super::*;
-    use gamepkg_takedawn_windows_runner::{Process, Sandbox, WorkerPipe, WorkerProcess};
+    use gamepkg_native_windows_runner::{Process, Sandbox, WorkerPipe, WorkerProcess};
     pub(in crate::native) struct Worker {
         process: Process,
         io: WorkerPipe,

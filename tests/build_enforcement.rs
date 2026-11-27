@@ -10,11 +10,9 @@ fn signatures_platform_or_profile_names_cannot_opt_out_of_exclusive_services() {
             .unwrap();
     assert!(build_policy::require(None).is_ok());
     for profile in [
-        "doom-e257a095",
-        "zelda3",
-        "cube2",
-        "takedawn",
-        "opence-ce95f7de",
+        "port-owned-engine",
+        "native-port",
+        "unmigrated-engine",
         "unknown",
         "",
         "gamepkg-native-services",
@@ -91,14 +89,11 @@ fn signed_legacy_package_and_valid_cached_executable_cannot_reach_build_play_or_
     let temp = tempfile::tempdir().unwrap();
     let library = temp.path().join("library");
     let mut legacy = helper::fixture("examples/minimal");
-    legacy.insert(
-        "manifest.toml".into(),
-        include_bytes!("fixtures/doom-legacy/manifest.toml").to_vec(),
+    let manifest = format!(
+        "builtin_engine=\"port-owned-engine\"\n{}",
+        String::from_utf8(legacy["manifest.toml"].clone()).unwrap()
     );
-    legacy.insert(
-        "source/src/lib.rs".into(),
-        include_bytes!("fixtures/doom-legacy/legacy_tick.rs").to_vec(),
-    );
+    legacy.insert("manifest.toml".into(), manifest.into_bytes());
     let signed = helper::sign(&legacy, temp.path());
     let manifest = gamepkg::registry::install(&library, &signed, true).unwrap();
     let path = gamepkg::native::cache_path(&library, &manifest.id).unwrap();

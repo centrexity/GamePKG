@@ -17,12 +17,11 @@ FILES = [
     'html/support/details.json',
     'examples/maintainer/native_service_runtime.rs',
     'examples/maintainer/service_window.rs',
-    'tests/fixtures/service_takedawn_templates.rs', 'tests/support/adversarial.rs',
-    'src/port_host/graphics/takedawn.rs', 'src/port_host/graphics/verified.rs',
+    'tests/support/adversarial.rs',
+    'src/port_host/graphics/verified.rs',
     'src/port_host/preparation_local.rs', 'src/port_host/process_local.rs',
     'src/port_host/sdk_source.rs',
 ]
-ARTWORK = ['2048', 'arkanoo', 'doom', 'zelda3']
 CONFIG = b'''[source.crates-io]
 replace-with = "bundled-registry"
 
@@ -38,7 +37,6 @@ def source_files():
     )
     files = {name.decode() for name in output.split(b'\x00') if name}
     files.update(FILES)
-    files.update(f'ports/{port}/{name}' for port in ARTWORK for name in ['thumbnail.png', 'NOTICE'])
     return sorted(files)
 
 

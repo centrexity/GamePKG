@@ -9,7 +9,7 @@ binary or music is checked in.
 
 See [recorded effects and music](../../docs/DEVELOPING_GAMES.md#recorded-effects-on-desktop)
 for signed permissions, asset formats, memory shares and game calls. The canonical
-Arkanoo recipe uses original recordings. Published app 0.1.17 predates these
+Signed ports recipe uses original recordings. Published app 0.1.17 predates these
 source changes. Exact original MP3 codec parity, physical audio output and full
 game/platform fidelity remain separate qualification work.
 
@@ -412,7 +412,7 @@ The combined real-callback test now plays an effect from a child cache after the
 cache object is dropped, and verifies final parent cleanup. Actual 32-bit Linux
 checks also exercise full-width counters and cross-thread final ownership.
 The same public suites execute in Windows32 and Android32 qualification. See
-[platform evidence](../../docs/native-windows-gameplay-validation.md) for their
+platform-specific evidence in the owning port for their
 scope and run identities. Per-game limit carving and signed SDK activation use
 these child budgets; executable/userspace checks do not qualify a physical
 32-bit OS or Android game-window/audio integration.
@@ -429,20 +429,6 @@ package reader completes its ZIP checksum check before publishing the clip.
 Malformed/truncated files, exhausted budgets and corrupt assets release their
 charges. Embedded compressed assets fail explicitly pending decompressor-memory
 accounting; shared snapshots and stored assets use the bounded reader path.
-
-Maintainers can verify all five original effects without changing port assets:
-
-```sh
-python3 tools/check_effect_assets.py /path/to/pinned/original/arkanoo
-```
-
-The check validates the original MP3 hashes, uses the independent SDL reference
-to generate temporary 44.1 kHz WAVs, signs a temporary package with a synthetic
-test key and compares complete playback with every original stereo PCM frame.
-It also checks all five recordings fit the unchanged 4 MiB pool and that live
-voices retain its parent charge after the cache owner drops. Ordinary tests use
-synthetic signed WAVs and require no original assets or SDL decoder. The helper
-and native SDL libraries are maintainer dependencies only.
 
 This loader remains trusted host code. Injected guest effect commands reach it
 through transactional tick commit and per-game memory shares. Browser playback

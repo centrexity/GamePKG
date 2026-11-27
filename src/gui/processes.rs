@@ -15,11 +15,6 @@ pub(super) fn poll(children: &mut Vec<(String, Child)>) -> Poll {
                     Some(code) => format!("Game {id} stopped unexpectedly (exit code {code})."),
                     None => format!("Game {id} stopped unexpectedly ({status})."),
                 });
-                if let Ok(Some(detail)) = crate::registry::default_root()
-                    .and_then(|root| crate::takedawn::last_launch_error(&root, id))
-                {
-                    result.errors.push(detail);
-                }
             }
             false
         }

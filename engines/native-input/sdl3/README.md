@@ -31,8 +31,8 @@ neutralizes input and returns reset flags for clearing legacy views; rebinding
 the same window does nothing. Releases queued for a retired window, including
 the interval without a window, can clear invisible held latches. They never
 release a visible key or mouse button in the replacement window or reach game
-actions. Focus still comes from the engine's owned window. The Halo bridge
-checks actual SDL focus before resuming after a foreground, shown or restored
+actions. Focus still comes from the adapter owner's window. Consumers check
+actual SDL focus before resuming after a foreground, shown or restored
 notification.
 Physical keyboard scancodes, committed Unicode text, precise absolute/relative
 mouse movement, five mouse buttons, wheel input and full-width touch surface and
@@ -59,15 +59,15 @@ not touch SDL. Backend ID 3 identifies these devices in the common service.
 Maintainer verification uses virtual controllers and no video or audio output:
 
 ```sh
-python3 tools/check_native_sdl3.py --source /path/to/reviewed-opence \
+python3 tools/check_native_sdl3.py --source /path/to/reviewed-port \
   --library /path/to/libgamepkg_native_input.a \
   --sdl3-include /path/to/SDL3/include --sdl3-library /path/to/libSDL3.so.0 \
   --output /tmp/gamepkg-sdl3-check --cc clang-18
 ```
 
-The runner checks the pinned original Halo mapper and stand-in declarations.
-It compares every raw coordinate report with four preexisting keyboard-state
-patterns, tests all buttons and their queue edges, and checks focus latches,
+The runner checks the adapter against stand-in declarations and the documented
+button/axis contract. It compares every raw coordinate report with four
+preexisting keyboard-state patterns, tests all buttons and their queue edges, and checks focus latches,
 stable player slots, generation handles and engine-owned device lifetime.
 Swapped buttons, incorrect Y conversion, ignored focus loss and slot compaction
 must each fail at their specified assertion. The queued-tap negative control
@@ -82,12 +82,12 @@ Python is a maintainer test tool, not a player dependency.
 
 The same fixtures can be compiled for the native Windows MSVC ABI. Build the
 Rust service for `i686-pc-windows-msvc` with
-`RUSTFLAGS="-C target-feature=+crt-static"` to match Halo's static C runtime.
+`RUSTFLAGS="-C target-feature=+crt-static"` when the consumer uses a static C runtime.
 Use an x86 SDK developer environment and the matching SDL3 import library:
 
 ```sh
 python3 tools/check_native_sdl3.py --platform windows-msvc --build-only \
-  --source /path/to/reviewed-opence \
+  --source /path/to/reviewed-port \
   --library /path/to/gamepkg_native_input.lib \
   --sdl3-include /path/to/SDL3/include --sdl3-library /path/to/SDL3.lib \
   --output /tmp/new-windows-input-fixtures --cc clang
@@ -101,23 +101,13 @@ avoiding deliberate assertion dialogs. `--build-only` records compilation
 without claiming execution. On native Windows, omit that flag to compile and
 execute them. Linux continues to run all eleven deliberate regression controls
 and memory instrumentation. These Windows fixtures passed on both test laptops
-with the same service/gateway used by the private native Halo build. Controllers
+with the same service/gateway used by the generic native runner. Controllers
 are virtual and window events are test records; this does not qualify physical
 Bluetooth input or Windows gameplay.
 
-This component is under integration. A private native Halo executable routes
-its existing SDL event pump through this gateway. Actual A30 campaign tests
-have verified controller aim and walking, OS keyboard walking, OS mouse firing
-and aim, and OS focus latching with dummy audio on a separate GPU desktop.
-The Linux i686 player plan now embeds this service and the adapted platform
-sources through the reviewed preparation data; its end-to-end build is under
-qualification. Windows preparation, full campaign/co-op, split-screen/rumble and physical
-Bluetooth checks remain. These checks do not establish frame-time performance
-or Windows gameplay qualification.
-
-Halo's integration additionally uses `engines/halo/input/halo_gamepad_ports.h`
-to retain an existing player's game port when another controller joins or
-leaves. Its original deliberate solo/split transition still waits for a lone
-controller to be at rest. This game-specific keyboard-sharing policy is separate
-from canonical device ownership; the SDL3 fixture checks both using real shared
-generation handles. Complete split-screen gameplay and rumble remain to verify.
+Ports route their existing SDL event pump through this gateway. The Linux
+i686 player plan can embed this service and the adapted platform sources through
+reviewed preparation data; its end-to-end build is qualified by the owning port.
+Physical-device, campaign and platform-specific checks remain with each port.
+These adapter checks do not establish frame-time performance or gameplay
+qualification.

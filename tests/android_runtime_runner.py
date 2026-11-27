@@ -20,7 +20,7 @@ class AndroidRunnerTests(unittest.TestCase):
                     if "cargo test " in line and "--target i686-linux-android " in line]
         self.compiled = set(re.findall(r"--test ([a-z_]+)", command))
         self.assertIn("render_resources", self.compiled)
-        self.assertIn("game_arkanoo", self.compiled)
+        self.assertIn("music_permissions", self.compiled)
         binaries = self.root / "target/i686-linux-android/debug/deps"
         binaries.mkdir(parents=True)
         for name in self.compiled:
@@ -99,10 +99,10 @@ elif '--test-threads=1' in args[3] and os.environ.get('CONTROL_FAIL_SUITE'):
         self.assertEqual(publication, [])
 
     def test_missing_compiled_suite_cannot_report_success(self):
-        (self.root / "target/i686-linux-android/debug/deps/game_arkanoo-control").unlink()
+        (self.root / "target/i686-linux-android/debug/deps/music_permissions-control").unlink()
         result, suites, publication = self.run_runner()
         self.assertNotEqual(result.returncode, 0)
-        self.assertNotIn("game_arkanoo", suites)
+        self.assertNotIn("music_permissions", suites)
         self.assertEqual(publication, [])
 
     def test_custom_cargo_artifact_directory_is_not_assumed_to_be_target(self):

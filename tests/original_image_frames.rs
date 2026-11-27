@@ -2,7 +2,7 @@
 use gamepkg::{drawing::Command, runtime::Game};
 use sha2::{Digest, Sha256};
 #[test]
-#[ignore = "requires private signed original-image recipes from check_original_image_frames.py"]
+#[ignore = "requires private signed original-image fixtures"]
 fn complete_original_background_frames_preserve_all_tile_pixels() {
     let root =
         std::path::PathBuf::from(std::env::var_os("GAMEPKG_ORIGINAL_IMAGE_LIBRARY").unwrap());

@@ -4,13 +4,13 @@ This host library gives native engines the same device handles, player-slot rule
 held-state snapshots, ordered events and focus behavior. It does not pump OS
 events or remap a game's actions. SDL2, SDL3 and Windows XInput adapters must feed
 it from their existing pump/poll and preserve each game's original mappings.
-The Windows XInput and SDL2 source-kit adapters feed this service and read its
-player snapshots before the engine's original Duke mapping. SDL2 keeps its one
+Trusted Windows XInput, SDL2 and SDL3 adapters feed this service and read its
+player snapshots before each port's own action mapping. SDL2 keeps its one
 existing event pump and its original rumble lifetime/exit handling. Both headed
-and headless SDL2 now use first-button ownership. Its window dispatcher also
-feeds keyboard, text, mouse and touch events into the shared service, gating the
+and headless SDL2 use first-button ownership. Its window dispatcher also feeds
+keyboard, text, mouse and touch events into the shared service, gating the
 legacy key/touch action view through accepted input. The default Windows Vulkan
-build uses this same SDL2 window path. Halo's SDL3 adapter feeds the same service.
+build uses this same SDL2 window path, and the SDL3 adapter feeds the same service.
 The native Windows D3D11 window has a shared keyboard/text/focus adapter, staged
 from its pinned source without changing the renderer. The older GDI debug
 presenter and native Win32 mouse/touch paths remain to be connected. Existing
@@ -76,7 +76,7 @@ logical-player and connection-mask probe policies.
 `tools/check_native_sdl2.py --toolkit PATH --library PATH --output PATH` builds
 the pinned actual SDK backend/core with the Rust archive and exercises virtual
 controllers in both main-pump and headless modes. It compares 65,536 raw states
-through the original Duke mapper and checks all 21 common physical buttons.
+through a documented stand-in mapper and checks all 21 common physical buttons.
 The original 682 Linux mapping checks and 15 rumble checks also run; the rumble
 fixture supplies one virtual join press for the new ownership rule, retaining
 all original timing and shutdown assertions. Swapped-button and incorrect Y

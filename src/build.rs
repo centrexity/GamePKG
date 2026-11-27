@@ -87,12 +87,6 @@ pub(crate) fn is_built_verified(
     if manifest.uses_service_runtime() {
         return Ok(false);
     }
-    if matches!(
-        manifest.builtin_engine.as_deref(),
-        Some(crate::cube2::PROFILE) | Some(crate::takedawn::PROFILE)
-    ) {
-        return Ok(false);
-    }
     if let Some(profile) = manifest.builtin_engine.as_deref() {
         let engine = path.with_file_name(crate::builtin::filename(profile)?);
         let Ok(bytes) = crate::files::read_regular(&engine, 32 * 1048576, false) else {
@@ -191,20 +185,6 @@ pub fn compile(root: &Path, id: &str) -> Result<()> {
 
     if registry::installed_manifest(root, id)?.uses_service_runtime() {
         bail!("native service games require the native Build action");
-    }
-    if registry::installed_manifest(root, id)?
-        .builtin_engine
-        .as_deref()
-        == Some(crate::takedawn::PROFILE)
-    {
-        bail!("Takedawn requires the native Build action; Wasm compilation is unavailable");
-    }
-    if registry::installed_manifest(root, id)?
-        .builtin_engine
-        .as_deref()
-        == Some(crate::cube2::PROFILE)
-    {
-        bail!("Cube 2 requires the native Build action; Wasm compilation is unavailable");
     }
     #[cfg(windows)]
     {

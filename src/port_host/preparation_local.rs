@@ -124,8 +124,8 @@ fn local_runtime(budget: u64) -> local::runtime::Result<local::runtime::Runtime>
     #[cfg(target_os = "linux")]
     let cargo = tools.root.join("bin/cargo").canonicalize()?;
     #[cfg(windows)]
-    let cargo = crate::takedawn_windows_sdk::prepare_compat_cargo(cache, plan.target.triple())?
-        .canonicalize()?;
+    let cargo =
+        crate::windows_sdk::prepare_compat_cargo(cache, plan.target.triple())?.canonicalize()?;
     let cargo_hash = hash(&cargo)?;
     let mut command = Command::new(link_path(&cargo)?);
     #[cfg(target_os = "linux")]
@@ -267,7 +267,7 @@ fn local_runtime(budget: u64) -> local::runtime::Result<local::runtime::Runtime>
 
 fn link_path(path: &Path) -> Result<PathBuf> {
     #[cfg(windows)]
-    return crate::takedawn_windows_sdk::compiler_path(path);
+    return crate::windows_sdk::compiler_path(path);
     #[cfg(target_os = "linux")]
     Ok(path.to_path_buf())
 }
@@ -289,7 +289,7 @@ fn configure_windows(
         Target::Windows32 => ("i686", "i686-w64-mingw32"),
         _ => anyhow::bail!("invalid Windows compatibility target"),
     };
-    let (bin, identity) = crate::takedawn_windows_sdk::prepare_compat_clang(cache, arch)?;
+    let (bin, identity) = crate::windows_sdk::prepare_compat_clang(cache, arch)?;
     let clang = bin.join(format!("{clang_name}-clang.exe")).canonicalize()?;
     let ar = bin.join("llvm-ar.exe").canonicalize()?;
     let dlltool = bin.join("llvm-dlltool.exe").canonicalize()?;

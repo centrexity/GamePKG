@@ -139,7 +139,7 @@ impl Capture {
                     pressed,
                     repeat,
                 } => {
-                    let Some(scan) = super::cube2_input::scancode(*code) else {
+                    let Some(scan) = crate::port_host::physical_key::scancode(*code) else {
                         continue;
                     };
                     Event {
@@ -175,7 +175,8 @@ impl Capture {
                             NamedKey::Backspace => 8,
                             NamedKey::Delete => 127,
                             _ => {
-                                let Some(scan) = physical.and_then(super::cube2_input::scancode)
+                                let Some(scan) =
+                                    physical.and_then(crate::port_host::physical_key::scancode)
                                 else {
                                     continue;
                                 };

@@ -15,18 +15,14 @@ on:
       - 'engines/native-services/**'
       - 'src/shaders.rs'
       - 'src/windows_compiler.rs'
-      - 'src/takedawn_windows_sdk.rs'
       - 'engines/native/**'
-      - 'engines/takedawn/windows-runner/**'
+      - 'engines/native-services/windows-runner/**'
       - 'tests/windows_native_gui.py'
       - 'tests/port_services_vulkan.rs'
       - 'tests/fixtures/windows_native_*'
       - 'tests/fixtures/service_textured_v2.rs'
       - 'tests/textured_v2_pins.rs'
       - 'tests/windows_owned_window.py'
-      - 'tests/windows_doom_gui.py'
-      - 'tests/doom_gui_proof.py'
-      - 'tests/doom_gui_proof_test.py'
       - 'tests/windows_gui_support.py'
       - 'tests/windows_graphics_capture.py'
       - 'tests/reference/windows-native-graphics/**'
@@ -54,18 +50,14 @@ on:
       - 'engines/native-services/**'
       - 'src/shaders.rs'
       - 'src/windows_compiler.rs'
-      - 'src/takedawn_windows_sdk.rs'
       - 'engines/native/**'
-      - 'engines/takedawn/windows-runner/**'
+      - 'engines/native-services/windows-runner/**'
       - 'tests/windows_native_gui.py'
       - 'tests/port_services_vulkan.rs'
       - 'tests/fixtures/windows_native_*'
       - 'tests/fixtures/service_textured_v2.rs'
       - 'tests/textured_v2_pins.rs'
       - 'tests/windows_owned_window.py'
-      - 'tests/windows_doom_gui.py'
-      - 'tests/doom_gui_proof.py'
-      - 'tests/doom_gui_proof_test.py'
       - 'tests/windows_gui_support.py'
       - 'tests/windows_graphics_capture.py'
       - 'tests/reference/windows-native-graphics/**'
@@ -149,8 +141,6 @@ jobs:
           python -m pip install Pillow==11.3.0
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python tests/windows_graphics_capture.py
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python tests/doom_gui_proof_test.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Run shared Vulkan pixel tests on the native driver
         if: inputs.hardware

@@ -85,8 +85,8 @@ next
         0,
     )
     .unwrap();
-    assert_eq!(session.step(1, 0, &[]).unwrap(), 1u64 << 32);
-    assert_eq!(session.step(3, 1u64 << 32, &[]).unwrap(), 4u64 << 32);
+    assert_eq!(session.step(1, 0).unwrap(), 1u64 << 32);
+    assert_eq!(session.step(3, 1u64 << 32).unwrap(), 4u64 << 32);
     drop(session);
     let mut session = super::Session::new(
         root,
@@ -98,7 +98,7 @@ next
         0,
     )
     .unwrap();
-    assert_eq!(session.step(2, 4u64 << 32, &[]).unwrap(), 6u64 << 32);
+    assert_eq!(session.step(2, 4u64 << 32).unwrap(), 6u64 << 32);
     drop(session);
     assert_eq!(
         crate::saves::Save::open_for_game(root, &manifest)
@@ -169,31 +169,4 @@ next
 fn signed_native_sdk_assets_saves_and_integrity() {
     let root = tempfile::tempdir().unwrap();
     verify_signed_sdk(root.path(), &crate::settings::Settings::default());
-}
-
-#[cfg(target_os = "linux")]
-#[test]
-fn legacy_c_engine_packages_install_but_cannot_build() {
-    let root = tempfile::tempdir().unwrap();
-    let settings = crate::settings::Settings::default();
-    for name in ["doom", "zelda3"] {
-        let package = root.path().join(format!("{name}.gamepkg"));
-        crate::pack::pack(
-            &Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("ports")
-                .join(name),
-            &package,
-            &[119; 32],
-        )
-        .unwrap();
-        let manifest = crate::registry::install(root.path(), &package, true).unwrap();
-        let error =
-            super::build::compile_with_settings(root.path(), &manifest.id, &settings).unwrap_err();
-        assert!(
-            error.to_string().contains("requires migration"),
-            "{error:#}"
-        );
-        let digest = crate::verify::digest(&std::fs::read(&package).unwrap());
-        assert!(!super::path_for_digest(root.path(), &digest).exists());
-    }
 }

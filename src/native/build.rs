@@ -222,10 +222,6 @@ fn compile_linux(
         .parent()
         .and_then(Path::parent)
         .context("invalid Rust installation")?;
-    let mut extra = Vec::new();
-    if let Some(profile) = m.builtin_engine.as_deref() {
-        extra = engine(stage, profile, settings.optimize_builds)?;
-    }
     if needs_shaders {
         crate::shaders::compile(root, package_digest, package, m, settings)?;
     }
@@ -270,8 +266,7 @@ fn compile_linux(
         } else {
             Vec::new()
         })
-        .args(["-o", "/work/game"])
-        .args(extra);
+        .args(["-o", "/work/game"]);
     let output = crate::compiler::run(&mut cmd)?;
     ensure!(
         output.status.success(),
@@ -302,61 +297,4 @@ fn sandbox(cmd: &mut std::process::Command, stage: &Path) {
         .arg(stage)
         .arg("/work")
         .args(["--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp"]);
-}
-#[cfg(target_os = "linux")]
-fn engine(stage: &Path, profile: &str, optimize: bool) -> Result<Vec<String>> {
-    ensure!(Path::new("/usr/bin/clang-18").is_file(),"Native source ports need Clang 18 (install clang-18); WASI libraries are only needed for the separate Wasm build");
-    let plan = super::engine_sources::stage(stage, profile)?;
-    let label = plan.label;
-    fs::create_dir(stage.join("objects"))?;
-    let mut cmd = crate::compiler::command(64 * 1048576);
-    sandbox(&mut cmd, stage);
-    cmd.args([
-        "--chdir",
-        "/work/objects",
-        "--",
-        "/usr/bin/clang-18",
-        "-target",
-        env!("GAMEPKG_BUILD_TARGET"),
-        "-c",
-        "-fPIC",
-        "-fno-strict-aliasing",
-        "-ffunction-sections",
-        "-fdata-sections",
-    ])
-    .arg(if optimize { "-O3" } else { "-O0" })
-    .arg(if matches!(std::env::consts::ARCH, "arm" | "aarch64") {
-        "-mcpu=native"
-    } else {
-        "-march=native"
-    });
-    for include in &plan.includes {
-        cmd.arg(format!("-I/work/{include}"));
-    }
-    for definition in plan.definitions {
-        cmd.arg(format!("-D{definition}"));
-    }
-    cmd.args(plan.sources.iter().map(|source| format!("/work/{source}")));
-    let out = crate::compiler::run(&mut cmd)?;
-    if !out.status.success() {
-        bail!("native {label} engine compilation failed: {}", out.stderr);
-    }
-    let mut args = vec!["--cfg".into(), plan.configuration.into()];
-    for entry in fs::read_dir(stage.join("objects"))? {
-        let entry = entry?;
-        if entry.path().extension().is_some_and(|e| e == "o") {
-            args.extend([
-                "-C".into(),
-                format!(
-                    "link-arg=/work/objects/{}",
-                    entry.file_name().to_string_lossy()
-                ),
-            ]);
-        }
-    }
-    args.extend(["-C".into(), "link-arg=-lm".into()]);
-    for name in plan.wraps {
-        args.extend(["-C".into(), format!("link-arg=-Wl,--wrap={name}")]);
-    }
-    Ok(args)
 }

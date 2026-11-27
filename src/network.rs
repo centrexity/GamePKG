@@ -188,41 +188,6 @@ impl Endpoint {
         Ok(addresses)
     }
 }
-/// Resolve saved launch addresses for a reviewed engine; not an allowlist.
-#[cfg(target_os = "linux")]
-pub(crate) fn multiplayer_endpoints(
-    p: &crate::manifest::Permissions,
-    listen: bool,
-) -> Result<Vec<(String, SocketAddr)>> {
-    validate(p)?;
-    ensure!(p.network, "multiplayer permission denied");
-    let entries = if listen {
-        &p.network_listen
-    } else {
-        &p.network_hosts
-    };
-    let mut pinned = BTreeMap::new();
-    entries
-        .iter()
-        .map(|text| {
-            let endpoint = Endpoint::parse(text)?;
-            let ip = if let Some(ip) = pinned.get(&endpoint.host) {
-                *ip
-            } else {
-                let ip = endpoint
-                    .resolve_all(true)?
-                    .into_iter()
-                    .find(SocketAddr::is_ipv4)
-                    .context("Cube 2 ENet requires an IPv4 endpoint")?
-                    .ip();
-                pinned.insert(endpoint.host.clone(), ip);
-                ip
-            };
-            let address = SocketAddr::new(ip, endpoint.port);
-            Ok((endpoint.host.clone(), address))
-        })
-        .collect()
-}
 pub(crate) fn validate(_p: &crate::manifest::Permissions) -> Result<()> {
     // Legacy endpoint fields are retained for reading signed packages and host
     // launch preferences, but are no longer capability restrictions.
@@ -320,27 +285,6 @@ impl Drop for Job<'_> {
     fn drop(&mut self) {
         self.0.fetch_sub(1, Ordering::SeqCst);
     }
-}
-#[cfg(target_os = "linux")]
-pub(crate) fn resolve_engine_host(name: &str) -> Result<SocketAddr> {
-    let endpoint = Endpoint::parse(&format!("{name}:1"))?;
-    let guard = Job::acquire(&JOBS)?;
-    let (tx, rx) = mpsc::sync_channel(1);
-    std::thread::Builder::new()
-        .name("gamepkg-dns".into())
-        .spawn(move || {
-            let _guard = guard;
-            let result = endpoint.resolve_all(true).and_then(|addresses| {
-                addresses
-                    .into_iter()
-                    .find(SocketAddr::is_ipv4)
-                    .context("IPv4 address missing")
-            });
-            let _ = tx.send(result);
-        })?;
-    // Never leave a DNS response queued on the engine RPC channel after timeout.
-    rx.recv_timeout(Duration::from_millis(500))
-        .context("DNS lookup timed out")?
 }
 impl Service {
     pub fn new(permissions: crate::manifest::Permissions) -> Self {

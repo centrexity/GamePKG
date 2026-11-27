@@ -28,6 +28,32 @@ fn read_only_system(command: &mut Command, paths: &[&str]) {
     }
 }
 
+/// Bind only the narrow set of proprietary NVIDIA character devices a native
+/// graphics worker may need, in addition to the generic `/dev/dri` nodes.
+fn nvidia_devices(directory: &Path) -> Result<Vec<PathBuf>> {
+    fn accepted(name: &str) -> bool {
+        matches!(
+            name,
+            "nvidiactl" | "nvidia-modeset" | "nvidia-uvm" | "nvidia-uvm-tools"
+        ) || name.strip_prefix("nvidia").is_some_and(|suffix| {
+            !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_digit())
+        })
+    }
+    let mut devices = Vec::new();
+    for entry in fs::read_dir(directory).context("read host graphics devices")? {
+        let entry = entry?;
+        if entry.file_name().to_str().is_some_and(accepted)
+            && fs::symlink_metadata(entry.path())?
+                .file_type()
+                .is_char_device()
+        {
+            devices.push(entry.path());
+        }
+    }
+    devices.sort();
+    Ok(devices)
+}
+
 fn socket(command: &mut Command, source: &Path, target: &Path) -> Result<()> {
     ensure!(
         fs::symlink_metadata(source)?.file_type().is_socket(),
@@ -326,7 +352,7 @@ impl Process {
         devices(&mut command, "/dev/dri", |name, _| {
             name.starts_with("renderD")
         })?;
-        for path in crate::takedawn_player::nvidia_devices(Path::new("/dev"))? {
+        for path in nvidia_devices(Path::new("/dev"))? {
             command.arg("--dev-bind").arg(&path).arg(&path);
         }
         if manifest.permissions.input {

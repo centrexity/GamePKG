@@ -1,6 +1,6 @@
 use gamepkg::runtime::Game;
 #[test]
-#[ignore = "requires tests/window_observation_game.py fixtures"]
+#[ignore = "requires external window fixtures"]
 fn generated_sdks_and_real_port_follow_actual_window_state_and_permissions() {
     let root = std::path::PathBuf::from(std::env::var("GAMEPKG_WINDOW_OBSERVATION_ROOT").unwrap());
     for suffix in ["core", "component", "core-denied", "component-denied"] {

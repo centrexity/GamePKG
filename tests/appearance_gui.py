@@ -13,12 +13,12 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-appearance-') as temporary:
   r=subprocess.run([str(PROJECT/'target/release/gamepkg'),*map(str,args)],env=env,capture_output=True,text=True,timeout=60)
   assert r.returncode==0,r.stderr
  key=root/'key';key.write_text('42'*32)
- for name,source in [('2048',PROJECT/'ports/2048'),('stars',PROJECT/'examples/good/collect-stars')]:
+ for name,source in [('stars',PROJECT/'examples/good/collect-stars')]:
   package=root/(name+'.gamepkg');run('pack',source,'-o',package,'--key',key);run('install',package,'--trust-creator')
  # An older independently signed package with a placeholder still gets host artwork.
- old=root/'old-doom';shutil.copytree(PROJECT/'examples/minimal',old)
- manifest=old/'manifest.toml';manifest.write_text(manifest.read_text().replace('com.gamepkg.minimal','com.gamepkg.doom'))
- old_package=root/'old-doom.gamepkg';run('pack',old,'-o',old_package,'--key',key);run('install',old_package,'--trust-creator')
+ old=root/'legacy-package';shutil.copytree(PROJECT/'examples/minimal',old)
+ manifest=old/'manifest.toml';manifest.write_text('builtin_engine="port-owned-engine"\n'+manifest.read_text().replace('com.gamepkg.minimal','com.gamepkg.legacy'))
+ old_package=root/'legacy-package.gamepkg';run('pack',old,'-o',old_package,'--key',key);run('install',old_package,'--trust-creator')
  run('build','com.gamepkg.collect-stars','--target','wasm')
  catalog=root/'games.gamepkglist';catalog.write_text("format_version=1\n[[games]]\nid='com.example.catalog'\ntitle='Explore the community collection'\nversion='2.1.0'\ndownload_url='https://example.invalid/catalog.gamepkg'\n")
  run('import-list',catalog)

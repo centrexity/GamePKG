@@ -174,7 +174,6 @@ fn verify_pixel(target:u64, expected:[u8;4]) -> Result<(),i32> {
 fn checked(
     root: &std::path::Path,
     raster: bool,
-    templates: Option<&std::path::Path>,
     textured: bool,
 ) -> anyhow::Result<(CheckedSources, gamepkg::archive::Package)> {
     let mut files = fixture::fixture("examples/minimal");
@@ -198,24 +197,6 @@ fn checked(
     let mut source = SOURCE.to_vec();
     if textured {
         source.extend_from_slice(TEXTURED_GAME);
-        source.extend_from_slice(READBACK);
-    } else if let Some(templates) = templates {
-        for mask in 0..16 {
-            use std::io::Read;
-            let name = format!("template_{mask:02}.slang");
-            let mut bytes = Vec::new();
-            std::fs::File::open(templates.join(&name))?
-                .take(1024 * 1024 + 1)
-                .read_to_end(&mut bytes)?;
-            anyhow::ensure!(
-                bytes.len() <= 1024 * 1024,
-                "template fixture exceeds input budget"
-            );
-            files.insert(format!("shaders/{name}"), bytes);
-        }
-        source.extend_from_slice(include_bytes!(
-            "../../tests/fixtures/service_takedawn_templates.rs"
-        ));
         source.extend_from_slice(READBACK);
     } else if raster {
         files.insert("shaders/native.slang".into(), RASTER_SHADER.to_vec());
@@ -268,26 +249,16 @@ fn fixture_plan(target: Target) -> anyhow::Result<Plan> {
 fn main() -> anyhow::Result<()> {
     let root = tempfile::tempdir()?;
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-    if std::env::args().any(|arg| arg == "--takedawn-templates") {
-        let path = std::env::var_os("GAMEPKG_TAKEDAWN_TEMPLATE_ROOT")
-            .map(std::path::PathBuf::from)
-            .ok_or_else(|| {
-                anyhow::anyhow!("select the reviewed service-renderer/shaders directory")
-            })?;
-        let (sources, package) = checked(root.path(), true, Some(&path), false)?;
-        return link_and_run(root.path(), &sources, &package, true, false);
-    }
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     if std::env::args().any(|arg| arg == "--textured-v1") {
-        let (sources, package) = checked(root.path(), true, None, true)?;
-        return link_and_run(root.path(), &sources, &package, false, true);
+        let (sources, package) = checked(root.path(), true, true)?;
+        return link_and_run(root.path(), &sources, &package, true);
     }
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     if std::env::args().any(|arg| arg == "--local") {
-        let (sources, package) = checked(root.path(), true, None, false)?;
-        return link_and_run(root.path(), &sources, &package, false, false);
+        let (sources, package) = checked(root.path(), true, false)?;
+        return link_and_run(root.path(), &sources, &package, false);
     }
-    let (sources, _) = checked(root.path(), false, None, false)?;
+    let (sources, _) = checked(root.path(), false, false)?;
     let target = if cfg!(windows) {
         Target::Windows64
     } else {
@@ -310,7 +281,6 @@ fn link_and_run(
     root: &std::path::Path,
     sources: &CheckedSources,
     package: &gamepkg::archive::Package,
-    takedawn: bool,
     textured: bool,
 ) -> anyhow::Result<()> {
     use anyhow::ensure;
@@ -321,22 +291,10 @@ fn link_and_run(
     };
     use gamepkg::{
         manifest::Shader,
-        port_host::graphics::{
-            takedawn_nvi1_recipes, textured_v1_recipe, PipelineRecipe, VerifiedPipelines,
-        },
+        port_host::graphics::{textured_v1_recipe, PipelineRecipe, VerifiedPipelines},
     };
     use preparation::Bootstrap;
-    let plan = if takedawn {
-        Plan::new(
-            Target::Linux64,
-            "game_main",
-            vec!["fixture_task".into()],
-            LocalLayout::TakedawnServices,
-            true,
-        )?
-    } else {
-        fixture_plan(Target::Linux64)?
-    };
+    let plan = fixture_plan(Target::Linux64)?;
     let launch = NativeLaunch {
         graphics: LaunchOptions {
             aspect_ratio: AspectRatio::Standard,
@@ -381,15 +339,13 @@ fn link_and_run(
         ..Default::default()
     };
     let recipes = || {
-        if takedawn {
-            takedawn_nvi1_recipes()
-        } else if textured {
+        if textured {
             vec![textured_v1_recipe()]
         } else {
             vec![recipe()]
         }
     };
-    let (different, _) = checked(tempfile::tempdir()?.path(), false, None, false)?;
+    let (different, _) = checked(tempfile::tempdir()?.path(), false, false)?;
     let error = VerifiedPipelines::prepare(root, &different, package, &settings, recipes(), 1)
         .err()
         .expect("other signed source kit must be refused");
@@ -399,19 +355,6 @@ fn link_and_run(
             .contains("shader package differs from checked game source kit"),
         "unexpected mismatched shader-package error: {error}"
     );
-    if takedawn {
-        let mut wrong_pin = takedawn_nvi1_recipes();
-        wrong_pin[0].source_hashes = wrong_pin[1].source_hashes;
-        let error = VerifiedPipelines::prepare(root, sources, package, &settings, wrong_pin, 1)
-            .err()
-            .expect("signed source must match reviewed Slang pin");
-        ensure!(
-            error
-                .to_string()
-                .contains("shader source differs from reviewed template"),
-            "unexpected template hash error: {error}"
-        );
-    }
     if textured {
         let mut wrong_pin = vec![textured_v1_recipe()];
         wrong_pin[0].source_hashes = Some(
@@ -450,7 +393,7 @@ fn link_and_run(
         receipt.game.objects.len(),
         receipt.raw_objects.len()
     );
-    let pipeline_count = if takedawn { 16 } else { 1 };
+    let pipeline_count = 1;
     ensure!(
         receipt.game.shaders.len() == pipeline_count && receipt.shader_preparation.len() == 1,
         "missing verified pipeline and Slang identities"
@@ -507,7 +450,7 @@ fn link_and_run(
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
     println!("{}", process.diagnostics());
-    let expects_frame = takedawn || !exit_before_frame();
+    let expects_frame = !exit_before_frame();
     ensure!(
         process.first_frame_presented() == expects_frame,
         "unexpected native frame readiness"

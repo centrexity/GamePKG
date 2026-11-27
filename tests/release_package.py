@@ -13,10 +13,7 @@ from gui_test_support import start_display, stop_process
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('archive', type=Path)
-parser.add_argument('--cube2-package', type=Path)
-parser.add_argument('--game-data', type=Path)
 args = parser.parse_args()
-assert bool(args.cube2_package)==bool(args.game_data),'Supply both Cube selector and original data, or neither'
 archive = args.archive.resolve()
 expected = archive.with_suffix(archive.suffix + '.sha256').read_text().split()[0]
 assert hashlib.file_digest(archive.open('rb'), 'sha256').hexdigest() == expected
@@ -26,8 +23,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-release-test-') as directory:
         assert all(not member.issym() and not member.islnk() for member in package.getmembers())
         package.extractall(root / 'distribution', filter='data')
     distribution, = (root / 'distribution').iterdir()
-    for port in ['2048', 'arkanoo', 'zelda3', 'doom', 'cube2']:
-        assert (distribution / 'ports' / port / 'manifest.toml').is_file()
+    assert (distribution / 'examples/minimal/manifest.toml').is_file()
     assert not list((distribution / 'ports').rglob('.git'))
     build = json.loads((distribution / 'BUILD.json').read_text())
     for name, digest in build['executables_sha256'].items():
@@ -62,13 +58,6 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-release-test-') as directory:
     run('run', game_id, '--frames', '3')
     assert 'compiled game verified' in run('integrity-check', game_id)
     target = 'wasm'
-    if args.cube2_package:
-        run('install',args.cube2_package.resolve(),'--trust-creator')
-        game_id='com.gamepkg.cube2'
-        target='native'
-        run('build',game_id)
-        run('run',game_id,'--game-data',args.game_data.resolve(),'--frames','3')
-        assert 'compiled game verified' in run('integrity-check',game_id)
     display = start_display(env)
     log_path = root / 'desktop.log'
     app = None
@@ -93,7 +82,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-release-test-') as directory:
         while True:
             subprocess.run(['import', '-display', env['DISPLAY'], '-window', window.stdout.splitlines()[0], str(screenshot)], env=env, check=True)
             image=Image.open(screenshot).convert('RGB')
-            if len(image.getcolors(image.width*image.height))>(500 if args.cube2_package else 4):break
+            if len(image.getcolors(image.width*image.height))>4:break
             assert app.poll() is None and time.monotonic()<deadline,'No game graphics in extracted player'
             time.sleep(.2)
         text = subprocess.check_output(['tesseract', str(screenshot), 'stdout'], stderr=subprocess.DEVNULL, text=True)

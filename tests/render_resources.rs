@@ -51,9 +51,16 @@ fn only_the_explicit_signed_profile_can_select_larger_resources() {
     ] {
         assert!(Manifest::parse(invalid.as_bytes()).is_err());
     }
-    let original = include_str!("../ports/zelda3/manifest.toml");
+    let original = format!(
+        "native_services=true\n{}",
+        include_str!("../examples/minimal/manifest.toml")
+    );
     Manifest::parse(original.as_bytes()).unwrap();
-    let mut builtin: toml::Value = toml::from_str(original).unwrap();
+    let mut builtin: toml::Value = toml::from_str(&original).unwrap();
+    builtin.as_table_mut().unwrap().insert(
+        "builtin_engine".into(),
+        toml::Value::String("port-owned-engine".into()),
+    );
     builtin["limits"].as_table_mut().unwrap().insert(
         "render_profile".into(),
         toml::Value::String("large-images-v1".into()),

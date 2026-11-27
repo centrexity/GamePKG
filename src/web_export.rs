@@ -590,20 +590,26 @@ mod tests {
 
     #[test]
     fn exact_png_selection_retains_indexed_transparency_and_rejects_unsupported_headers() {
-        for source in [
-            include_bytes!("../ports/arkanoo/assets/heart.png").as_slice(),
-            include_bytes!("../ports/arkanoo/assets/ball.png").as_slice(),
-        ] {
-            assert!(crate::drawing::image::Image::from_png(source).is_some());
-            assert!(exact_png_source(source));
-            assert!(!exact_png_source(&source[..source.len() - 1]));
-            let mut unsupported = source.to_vec();
-            unsupported[24] = 16;
-            assert!(!exact_png_source(&unsupported));
-            unsupported[24] = 8;
-            unsupported[28] = 1;
-            assert!(!exact_png_source(&unsupported));
-        }
+        // Minimal 1x1 indexed PNG with a one-byte tRNS table. Keep the fixture in
+        // the host test instead of depending on a game package asset.
+        const INDEXED: &[u8] = &[
+            0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48,
+            0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x03, 0x00, 0x00,
+            0x00, 0x28, 0xcb, 0x34, 0xbb, 0x00, 0x00, 0x00, 0x03, 0x50, 0x4c, 0x54, 0x45, 0xff,
+            0x00, 0x00, 0x19, 0xe2, 0x09, 0x37, 0x00, 0x00, 0x00, 0x01, 0x74, 0x52, 0x4e, 0x53,
+            0x00, 0x40, 0xe6, 0xd8, 0x66, 0x00, 0x00, 0x00, 0x0a, 0x49, 0x44, 0x41, 0x54, 0x78,
+            0x9c, 0x63, 0x60, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01, 0x48, 0xaf, 0xa4, 0x71, 0x00,
+            0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+        ];
+        assert!(crate::drawing::image::Image::from_png(INDEXED).is_some());
+        assert!(exact_png_source(INDEXED));
+        assert!(!exact_png_source(&INDEXED[..INDEXED.len() - 1]));
+        let mut unsupported = INDEXED.to_vec();
+        unsupported[24] = 16;
+        assert!(!exact_png_source(&unsupported));
+        unsupported[24] = 8;
+        unsupported[28] = 1;
+        assert!(!exact_png_source(&unsupported));
     }
 
     #[test]

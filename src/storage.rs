@@ -156,13 +156,7 @@ pub fn usage(root: &Path, manifest: &crate::manifest::Manifest) -> Result<Usage>
         .join("game.wasm");
     use std::io::Read;
     let mut measure = |path: &Path| scoped_total(root, path, &mut allocation);
-    let mut built_bytes = measure(build.parent().unwrap())?;
-    if manifest.builtin_engine.as_deref() == Some(crate::takedawn::PROFILE) {
-        for cache in ["takedawn", "takedawn-windows"] {
-            built_bytes =
-                built_bytes.saturating_add(measure(&root.join("native-unit-cache").join(cache))?);
-        }
-    }
+    let built_bytes = measure(build.parent().unwrap())?;
     let mut shader_bytes = 0u64;
     let shaders = root.join("shader-builds");
     if shaders.exists() && !shaders.symlink_metadata()?.file_type().is_symlink() {
@@ -202,30 +196,11 @@ pub fn usage(root: &Path, manifest: &crate::manifest::Manifest) -> Result<Usage>
             manifest.id, manifest.creator_key, manifest.save_schema
         )
     };
-    let mut save_bytes = measure(
+    let save_bytes = measure(
         &root
             .join("saves")
             .join(format!("{}.blob", crate::verify::digest(scope.as_bytes()))),
     )?;
-    if manifest.builtin_engine.as_deref() == Some(crate::cube2::PROFILE) {
-        save_bytes = save_bytes.saturating_add(measure(&crate::cube2::save_path(
-            root,
-            &manifest.id,
-            &manifest.creator_key,
-            manifest.save_schema,
-        ))?);
-    }
-    if manifest.builtin_engine.as_deref() == Some(crate::takedawn::PROFILE) {
-        save_bytes = save_bytes.saturating_add(measure(&crate::takedawn::data_path(
-            root,
-            &manifest.id,
-            &manifest.creator_key,
-            manifest.save_schema,
-        ))?);
-    }
-    for name in crate::zelda_snapshots::slot_names(manifest)? {
-        save_bytes = save_bytes.saturating_add(measure(&root.join("states").join(name))?);
-    }
     let history_bytes = measure(&crate::progress::path(
         root,
         &manifest.id,

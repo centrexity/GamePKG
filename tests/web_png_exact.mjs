@@ -7,13 +7,14 @@ const source=Buffer.from(readFileSync(new URL('../web-player/png-exact.js',impor
 const {decodeExactPNG}=await import('data:text/javascript;base64,'+source.toString('base64'));
 const report=JSON.parse(readFileSync(process.argv[2],'utf8'));let checked=0;
 for(const image of report.images){
- const bytes=new Uint8Array(readFileSync((process.argv[3]??process.cwd()+'/ports/arkanoo/assets')+'/'+image.asset));
+ if(!process.argv[3])throw new Error('Pass an explicit PNG asset directory');
+ const bytes=new Uint8Array(readFileSync(process.argv[3]+'/'+image.asset));
  const decoded=await decodeExactPNG(bytes);assert.ok(decoded,`Unsupported PNG ${image.asset}: color type ${bytes[25]}, depth ${bytes[24]}`);
  assert.equal(createHash('sha256').update(decoded.pixels).digest('hex'),image.rgba_sha256,image.asset);checked++;
  const broken=bytes.slice();broken[broken.length-1]^=1;await assert.rejects(()=>decodeExactPNG(broken),/CRC/);
  await assert.rejects(()=>decodeExactPNG(bytes.subarray(0,bytes.length-1)));
 }
-assert.ok(report.render_profile==null||report.render_profile==='large-images-v1');const expected=report.render_profile==='large-images-v1'?178:76;assert.equal(checked,expected);console.log('All '+expected+' original PNGs match independent decoded RGBA hashes; CRC and truncation reject.');
+assert.ok(report.render_profile==null||report.render_profile==='large-images-v1');const expected=report.render_profile==='large-images-v1'?178:76;assert.equal(checked,expected);console.log('All '+expected+' PNGs match independent decoded RGBA hashes; CRC and truncation reject.');
 // Independent small encodings exercise every predictor, channels and malformed bounds.
 const {deflateSync}=await import('node:zlib');
 function crc(bytes){let value=0xffffffff;for(const byte of bytes){value^=byte;for(let i=0;i<8;i++)value=value&1?0xedb88320^(value>>>1):value>>>1;}return (value^0xffffffff)>>>0;}

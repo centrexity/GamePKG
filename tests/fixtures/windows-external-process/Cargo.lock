@@ -31,7 +31,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
 
 [[package]]
-name = "gamepkg-takedawn-windows-runner"
+name = "gamepkg-native-windows-runner"
 version = "0.1.0"
 dependencies = [
  "windows-sys",
@@ -41,7 +41,7 @@ dependencies = [
 name = "gamepkg-windows-external-process-fixture"
 version = "0.1.0"
 dependencies = [
- "gamepkg-takedawn-windows-runner",
+ "gamepkg-native-windows-runner",
  "tempfile",
  "windows-sys",
 ]

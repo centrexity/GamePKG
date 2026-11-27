@@ -50,7 +50,7 @@ static DWORD fake_foreground_process(HWND window, LPDWORD process) {
 #define GAMEPKG_XINPUT_TIME_NS fake_pad_time
 #define GetForegroundWindow fake_foreground
 #define GetWindowThreadProcessId fake_foreground_process
-#include "../../takedawn/media-bridge/native_xinput.h"
+#include "gamepkg_xinput.h"
 #undef GetForegroundWindow
 #undef GetWindowThreadProcessId
 

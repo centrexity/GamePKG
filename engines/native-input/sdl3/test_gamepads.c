@@ -1,23 +1,9 @@
 /* Maintainer fixture: actual SDL3 virtual gamepads and the real Rust service. */
 #include "gamepkg_sdl3.h"
-#include "../../halo/input/halo_gamepad_ports.h"
 #include <assert.h>
 #include <stdio.h>
 
 static SDL_Gamepad *players[GAMEPKG_INPUT_MAX_PLAYERS];
-static struct gamepkg_halo_ports halo_ports;
-static void check_ports(int split,int idle,int zero,int one) {
-    uint64_t devices[4]={0};int ports[4];
-    for(unsigned i=0;i<4;i++) {
-        gamepkg_input_gamepad state;
-        if(gamepkg_sdl3_snapshot(players[i],&state)==1)devices[i]=state.device;
-    }
-    gamepkg_halo_map_ports(&halo_ports,devices,split,idle,ports);
-    assert(ports[0]==zero&&ports[1]==one);
-}
-#ifdef GAMEPKG_HALO_MAPPING
-extern int gamepkg_halo_mapping_equal(SDL_Gamepad *,const gamepkg_input_gamepad *);
-#endif
 static int SDLCALL other_thread(void *pad) {
     SDL_Gamepad *out[GAMEPKG_INPUT_MAX_PLAYERS];gamepkg_input_gamepad snapshot;
     assert(gamepkg_sdl3_gamepads(out)==-1);
@@ -60,12 +46,9 @@ int main(void) {
     gamepkg_input_gamepad state;assert(gamepkg_sdl3_snapshot(b,&state)==1);
     uint64_t first=state.device;
     assert(state.buttons==GAMEPKG_INPUT_PAD_SOUTH);
-    check_ports(1,0,0,-1); /* held: don't duplicate the join action on P2 */
     assert(state.left_y==(int16_t)(-1-(int)SDL_GetGamepadAxis(b,SDL_GAMEPAD_AXIS_LEFTY)));
     button(b,SDL_GAMEPAD_BUTTON_SOUTH,false);
-    check_ports(1,1,-1,0); /* release permits Halo's deliberate P2 shift */
     button(a,SDL_GAMEPAD_BUTTON_EAST,true);assert(players[0]==b&&players[1]==a);
-    check_ports(1,0,1,0); /* second pad must not steal the existing P2 */
     button(a,SDL_GAMEPAD_BUTTON_EAST,false);
     /* Every named SDL3 button, including the five newer misc buttons, is
      * delivered at its physical position and gets a down/up queue edge. */
@@ -74,9 +57,6 @@ int main(void) {
         flush();
         button(b,(SDL_GamepadButton)bit,true);assert(gamepkg_sdl3_snapshot(b,&state)==1);
         assert(state.buttons==(1u<<expected[bit])&&gamepkg_sdl3_button(&state,(SDL_GamepadButton)bit));
-#ifdef GAMEPKG_HALO_MAPPING
-        assert(gamepkg_halo_mapping_equal(b,&state));
-#endif
         gamepkg_input_event events[64];int count=gamepkg_input_read(events,64),downs=0;
         for(int i=0;i<count;i++)if(events[i].kind==GAMEPKG_INPUT_PAD_DOWN){assert(events[i].device==state.device&&events[i].code==expected[bit]);downs++;}
         assert(downs==1);
@@ -95,9 +75,6 @@ int main(void) {
         assert(state.left_y==(int16_t)(-1-(int)SDL_GetGamepadAxis(b,SDL_GAMEPAD_AXIS_LEFTY)));
         assert(state.right_y==(int16_t)(-1-(int)SDL_GetGamepadAxis(b,SDL_GAMEPAD_AXIS_RIGHTY)));
         for(int axis=0;axis<SDL_GAMEPAD_AXIS_COUNT;axis++)assert(gamepkg_sdl3_axis(&state,(SDL_GamepadAxis)axis)==SDL_GetGamepadAxis(b,(SDL_GamepadAxis)axis));
-#ifdef GAMEPKG_HALO_MAPPING
-        assert(gamepkg_halo_mapping_equal(b,&state));
-#endif
     }
     button(b,SDL_GAMEPAD_BUTTON_START,true);gamepkg_sdl3_focus(false);pump();
     assert(gamepkg_sdl3_snapshot(b,&state)==1&&state.buttons==0&&state.left_x==0);
@@ -108,10 +85,8 @@ int main(void) {
     int thread_code=-1;SDL_WaitThread(thread,&thread_code);assert(thread_code==0);
     assert(gamepkg_sdl3_snapshot(b,&state)==1&&state.buttons==GAMEPKG_INPUT_PAD_START);
     close_pad(b,bid);assert(!players[0]&&players[1]==a); /* no slot compaction */
-    check_ports(1,1,1,-1);
     SDL_Gamepad *c=open_pad(&cid);pump();button(c,SDL_GAMEPAD_BUTTON_SOUTH,true);
     assert(players[0]==c&&players[1]==a);assert(gamepkg_sdl3_snapshot(c,&state)==1&&state.device>first);
-    check_ports(1,0,1,0); /* fresh generation fills only the free game port */
     /* The engine, rather than this adapter, owns SDL open/close lifetime. */
     gamepkg_sdl3_shutdown();assert(SDL_GamepadConnected(a)&&SDL_GamepadConnected(c));
     close_pad(a,aid);close_pad(c,cid);gamepkg_sdl3_shutdown();

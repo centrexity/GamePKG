@@ -1,5 +1,5 @@
 """Prepare or consume genuine isolated compiler exchanges across native hosts."""
-import argparse,hashlib,json,os,subprocess,tempfile
+import argparse,hashlib,json,os,shutil,subprocess,tempfile
 from pathlib import Path
 PROJECT=Path(__file__).resolve().parents[1]
 p=argparse.ArgumentParser(description=__doc__);p.add_argument('mode',choices=['prepare','consume']);p.add_argument('directory',type=Path);args=p.parse_args()
@@ -16,11 +16,13 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-native-exchange-') as temporary
  if args.mode=='prepare':
   fixture.mkdir(parents=True,exist_ok=False)
   key=root/'creator.key';run('keygen','-o',key)
-  legacy=root/'zelda3.gamepkg'
-  run('pack',PROJECT/'ports/zelda3','-o',legacy,'--key',key,'--shared-assets')
+  legacy=root/'legacy.gamepkg'
+  source=root/'legacy-source';shutil.copytree(PROJECT/'examples/minimal',source)
+  manifest=source/'manifest.toml';manifest.write_text('builtin_engine="port-owned-engine"\n'+manifest.read_text())
+  run('pack',source,'-o',legacy,'--key',key,'--shared-assets')
   run('install',legacy,'--trust-creator')
   rejected_store=fixture/'unsupported.gamepkgstore'
-  denial=run('prepare-build-worker','com.gamepkg.zelda3',rejected_store,good=False)
+  denial=run('prepare-build-worker','com.gamepkg.minimal',rejected_store,good=False)
   assert 'requires migration' in denial and not rejected_store.exists(),denial
  else:env.pop('GAMEPKG_SLANG_ROOT',None)
  for case,example,backend in cases:

@@ -1,6 +1,6 @@
 //! Bounded native compiler processes inside a Windows AppContainer and owned job.
 use anyhow::{ensure, Context, Result};
-use gamepkg_takedawn_windows_runner::{Sandbox, WorkerProcess};
+use gamepkg_native_windows_runner::{Sandbox, WorkerProcess};
 use std::{
     ffi::OsString,
     io::{self, Read},
@@ -150,7 +150,7 @@ impl PrivateToolRoot {
             directory.is_absolute() && directory.is_dir(),
             "compiler root must be an absolute directory"
         );
-        let target = crate::takedawn_windows_sdk::compiler_path(&directory.canonicalize()?)?;
+        let target = crate::windows_sdk::compiler_path(&directory.canonicalize()?)?;
         let mut nonce = [0u8; 16];
         getrandom::fill(&mut nonce)
             .map_err(|error| anyhow::anyhow!("private compiler name: {error}"))?;

@@ -11,7 +11,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(windows)]
 mod test {
-    use gamepkg_takedawn_windows_runner::{Process, Sandbox};
+    use gamepkg_native_windows_runner::{Process, Sandbox};
     use std::{
         ffi::{c_void, OsString},
         fs::{self, File, OpenOptions},
@@ -76,11 +76,6 @@ mod test {
 
     fn child() -> Result<(), Box<dyn std::error::Error>> {
         let raw: usize = std::env::var("GAMEPKG_DISC_HANDLE")?.parse()?;
-        assert_eq!(
-            std::env::var("GAMEPKG_TAKEDAWN_DISC_HANDLE")?,
-            raw.to_string()
-        );
-        assert!(std::env::var_os("GAMEPKG_TAKEDAWN_RESTART_HANDLE").is_none());
         let mut selected = unsafe { File::from_raw_handle(raw as *mut c_void) };
         let mut contents = String::new();
         selected.read_to_string(&mut contents)?;

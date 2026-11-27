@@ -216,13 +216,13 @@ mod platform {
     }
 
     pub fn grants(manifest: &Manifest) -> anyhow::Result<Grants> {
-        gamepkg_takedawn_windows_runner::require_compatibility_process(
+        gamepkg_native_windows_runner::require_compatibility_process(
             manifest.limits.hard_memory_bytes,
         )
         .context("Windows game containment check failed")?;
         gamepkg::port_host::process::require_windows_compatibility(manifest)?;
         let roms =
-            gamepkg_takedawn_windows_runner::open_inherited_roms(manifest.required_rom_count())?;
+            gamepkg_native_windows_runner::open_inherited_roms(manifest.required_rom_count())?;
         let scope = std::env::var_os("GAMEPKG_NATIVE_SAVE_SCOPE");
         ensure!(
             manifest.permissions.save == scope.is_some(),

@@ -1,4 +1,7 @@
 //! Native verification/runtime support never authorizes an unisolated source build.
+#[allow(dead_code)]
+#[path = "support/adversarial.rs"]
+mod helper;
 #[cfg(not(target_os = "linux"))]
 #[test]
 fn unavailable_compiler_exchange_rejects_before_creating_output() {
@@ -66,13 +69,13 @@ fn unavailable_native_and_shader_compilers_reject_before_creating_output() {
 #[test]
 fn unsupported_reviewed_engine_rejects_before_building_or_preparing_tools() {
     let root = tempfile::tempdir().unwrap();
-    let selector = root.path().join("cube2.gamepkg");
-    gamepkg::pack::pack(
-        &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("ports/cube2"),
-        &selector,
-        &[7; 32],
-    )
-    .unwrap();
+    let mut files = helper::fixture("examples/minimal");
+    let manifest = format!(
+        "builtin_engine=\"port-owned-engine\"\n{}",
+        String::from_utf8(files["manifest.toml"].clone()).unwrap()
+    );
+    files.insert("manifest.toml".into(), manifest.into_bytes());
+    let selector = helper::sign(&files, root.path());
     let manifest = gamepkg::registry::install(root.path(), &selector, true).unwrap();
     assert!(!gamepkg::native::build_supported(&manifest));
     assert!(!gamepkg::native::play_supported(&manifest));
@@ -131,7 +134,7 @@ fn desktop_native_build_and_play_require_the_compatibility_profiles() {
         )
     ));
     #[cfg(windows)]
-    let has_runtime = has_runtime && gamepkg_takedawn_windows_runner::supports_amd64_tools();
+    let has_runtime = has_runtime && gamepkg_native_windows_runner::supports_amd64_tools();
     assert_eq!(gamepkg::native::build_supported(&manifest), has_runtime);
     assert_eq!(gamepkg::native::play_supported(&manifest), has_runtime);
     assert_eq!(
@@ -188,10 +191,12 @@ fn obsolete_native_cache_cannot_enable_an_unmigrated_package() {
 
 #[cfg(target_os = "linux")]
 #[test]
-fn unmigrated_takedawn_is_blocked_even_on_its_prepared_architecture() {
-    let manifest =
-        gamepkg::manifest::Manifest::parse(include_bytes!("../ports/takedawn/manifest.toml"))
-            .unwrap();
+fn unmigrated_native_port_is_blocked_even_on_its_prepared_architecture() {
+    let text = format!(
+        "builtin_engine=\"port-owned-engine\"\n{}",
+        include_str!("../examples/minimal/manifest.toml")
+    );
+    let manifest = gamepkg::manifest::Manifest::parse(text.as_bytes()).unwrap();
     assert!(!gamepkg::native::build_supported(&manifest));
     assert!(!gamepkg::native::play_supported(&manifest));
 }

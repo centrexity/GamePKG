@@ -3,10 +3,7 @@
 /gamepkg-build-release
 /gamepkg-build-release.exe
 /dist/
-/engines/takedawn/media-bridge/target/
-/engines/takedawn/native-gen/target/
-/engines/takedawn/rust-port/target/
-/engines/takedawn/windows-runner/target/
+/engines/native-services/windows-runner/target/
 *.gamepkg
 *.partial
 *.key
@@ -20,10 +17,6 @@
 !html/demos/collect-stars.gamepkg
 !html/demos/shape-playground.gamepkg
 !html/demos/png-sprite-playground.gamepkg
-!html/demos/zelda3.gamepkg
 
 # Maintainer test caches
 __pycache__/
-
-# Prepared game-derived source remains private until source-kit release packaging.
-/.takedawn-prepared/

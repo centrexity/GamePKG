@@ -2,31 +2,25 @@ name: Confined native Windows window
 on:
   push:
     paths:
-      - 'src/takedawn/windows_player.rs'
-      - 'src/takedawn/path_audit.rs'
       - 'src/native/**'
       - 'tests/platform_build_boundary.rs'
       - 'src/shaders.rs'
       - 'src/windows_compiler.rs'
       - 'src/lib.rs'
-      - 'src/takedawn_windows_sdk.rs'
       - 'engines/native/**'
-      - 'engines/takedawn/windows-runner/**'
+      - 'engines/native-services/windows-runner/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
       - '.github/workflows/native_windows_window.yml'
   pull_request:
     paths:
-      - 'src/takedawn/windows_player.rs'
-      - 'src/takedawn/path_audit.rs'
       - 'src/native/**'
       - 'tests/platform_build_boundary.rs'
       - 'src/shaders.rs'
       - 'src/windows_compiler.rs'
       - 'src/lib.rs'
-      - 'src/takedawn_windows_sdk.rs'
       - 'engines/native/**'
-      - 'engines/takedawn/windows-runner/**'
+      - 'engines/native-services/windows-runner/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
       - '.github/workflows/native_windows_window.yml'
@@ -100,14 +94,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $log = Get-Content -Raw "$env:RUNNER_TEMP/platform-build-boundary.log"
           if ($log -notmatch 'test result: ok\. 4 passed; 0 failed;') { throw 'The four Windows platform boundary tests did not run successfully' }
-      - name: Verify AppContainer process ownership and the retired launcher boundary
+      - name: Verify confined native worker process ownership
         shell: pwsh
         run: |
-          cargo test --locked --lib takedawn_player::tests::legacy_windows_launcher_denies_before_opening_game_files -- --exact --nocapture 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP/native-window.log"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $log = Get-Content -Raw "$env:RUNNER_TEMP/native-window.log"
-          if ($log -notmatch 'test result: ok\. 1 passed; 0 failed;') { throw 'The retired launcher denial test did not run successfully' }
-          cargo test --locked --manifest-path engines/takedawn/windows-runner/Cargo.toml --lib worker_process::tests::confined_worker_keeps_io_but_denies_ungranted_files_network_and_processes -- --exact --nocapture 2>&1 | Tee-Object -Append -FilePath "$env:RUNNER_TEMP/native-window.log"
+          cargo test --locked --manifest-path engines/native-services/windows-runner/Cargo.toml --lib worker_process::tests::confined_worker_keeps_io_but_denies_ungranted_files_network_and_processes -- --exact --nocapture 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP/native-window.log"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $log = Get-Content -Raw "$env:RUNNER_TEMP/native-window.log"
           if ($log -notmatch 'confined_worker_keeps_io_but_denies_ungranted_files_network_and_processes \.\.\. ok') { throw 'The AppContainer ownership test did not run successfully' }

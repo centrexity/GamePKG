@@ -79,40 +79,13 @@ pub(crate) fn archive_snapshot(path: &Path) -> Result<(Vec<u8>, String)> {
 ))]
 pub(crate) const MAX_NATIVE_ROM_BYTES: u64 = 1 << 40;
 const MAX_ROM_READ: usize = 65536;
-const LEGACY_ROM_BYTES: u64 = 64 * 1024 * 1024;
 
-pub(crate) enum RomSet {
-    Files(Vec<(std::sync::Mutex<fs::File>, u64)>),
-    Snapshots(Vec<Vec<u8>>),
-}
-
-impl Default for RomSet {
-    fn default() -> Self {
-        Self::Files(Vec::new())
-    }
-}
+#[derive(Default)]
+pub(crate) struct RomSet(Vec<(std::sync::Mutex<fs::File>, u64)>);
 
 impl RomSet {
-    pub fn open(paths: &[std::path::PathBuf], cap: u64, snapshot: bool) -> Result<Self> {
-        if snapshot {
-            let mut total = 0usize;
-            let mut roms = Vec::with_capacity(paths.len());
-            for (index, path) in paths.iter().enumerate() {
-                let bytes = read_regular(path, LEGACY_ROM_BYTES, true).with_context(|| {
-                    format!("unable to open ROM {} for the legacy engine", index + 1)
-                })?;
-                if bytes.is_empty() {
-                    bail!("ROM {} is empty", index + 1);
-                }
-                total += bytes.len();
-                if total > 2 * LEGACY_ROM_BYTES as usize {
-                    bail!("combined legacy ROM snapshots exceed 128 MiB");
-                }
-                roms.push(bytes);
-            }
-            return Ok(Self::Snapshots(roms));
-        }
-        paths
+    pub fn open(paths: &[std::path::PathBuf], cap: u64) -> Result<Self> {
+        let files = paths
             .iter()
             .enumerate()
             .map(|(index, path)| {
@@ -125,29 +98,16 @@ impl RomSet {
                 }
                 Ok((std::sync::Mutex::new(file), len))
             })
-            .collect::<Result<Vec<_>>>()
-            .map(Self::Files)
+            .collect::<Result<Vec<_>>>()?;
+        Ok(Self(files))
     }
 
     pub fn len(&self) -> usize {
-        match self {
-            Self::Files(files) => files.len(),
-            Self::Snapshots(roms) => roms.len(),
-        }
+        self.0.len()
     }
 
     pub fn size(&self, index: usize) -> Option<u64> {
-        match self {
-            Self::Files(files) => files.get(index).map(|(_, size)| *size),
-            Self::Snapshots(roms) => roms.get(index).map(|data| data.len() as u64),
-        }
-    }
-
-    pub fn snapshots(&self) -> Option<&[Vec<u8>]> {
-        match self {
-            Self::Snapshots(roms) => Some(roms),
-            Self::Files(_) => None,
-        }
+        self.0.get(index).map(|(_, size)| *size)
     }
 
     pub fn read(&self, index: usize, offset: u64, len: usize) -> Option<Vec<u8>> {
@@ -156,21 +116,13 @@ impl RomSet {
             return None;
         }
         let count = available.min(len as u64) as usize;
-        match self {
-            Self::Snapshots(roms) => {
-                let start = usize::try_from(offset).ok()?;
-                Some(roms.get(index)?.get(start..start + count)?.to_vec())
-            }
-            Self::Files(files) => {
-                let (file, _) = files.get(index)?;
-                let mut file = file.lock().ok()?;
-                use std::io::{Seek, SeekFrom};
-                file.seek(SeekFrom::Start(offset)).ok()?;
-                let mut bytes = vec![0; count];
-                file.read_exact(&mut bytes).ok()?;
-                Some(bytes)
-            }
-        }
+        let (file, _) = self.0.get(index)?;
+        let mut file = file.lock().ok()?;
+        use std::io::{Seek, SeekFrom};
+        file.seek(SeekFrom::Start(offset)).ok()?;
+        let mut bytes = vec![0; count];
+        file.read_exact(&mut bytes).ok()?;
+        Some(bytes)
     }
 }
 

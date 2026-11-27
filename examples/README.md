@@ -1,5 +1,3 @@
-Port recipes have moved to [GamePKG_Ports](https://github.com/centrexity/GamePKG_Ports), pinned under `ports/` in the host checkout. Initialize them with `git submodule update --init --recursive`.
-
 # Package examples
 
 Every directory below is a complete source package. Generate a private creator key with `gamepkg keygen -o creator.key`, then pack an example to a path outside its source directory:

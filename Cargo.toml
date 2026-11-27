@@ -1,6 +1,6 @@
 [package]
 name = "gamepkg"
-version = "0.1.31"
+version = "0.1.32"
 edition = "2021"
 rust-version = "1.89"
 license = "Apache-2.0"
@@ -73,7 +73,7 @@ wat = "1"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_Networking_WinSock", "Win32_Storage_FileSystem"] }
-gamepkg-takedawn-windows-runner = { path = "engines/takedawn/windows-runner" }
+gamepkg-native-windows-runner = { path = "engines/native-services/windows-runner" }
 
 [target.'cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))'.dependencies]
 gilrs = { version = "=0.10.10", optional = true, default-features = false, features = ["xinput"] }

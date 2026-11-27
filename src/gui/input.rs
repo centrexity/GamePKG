@@ -2,9 +2,6 @@
 use crate::input_buttons as buttons;
 use eframe::egui;
 
-pub fn key_edge(input: &egui::InputState, key: egui::Key) -> bool {
-    input.events.iter().any(|event| matches!(event,egui::Event::Key {key:actual,pressed:true,repeat:false,..} if *actual==key))
-}
 #[derive(Default)]
 pub struct Keyboard {
     keys: std::collections::HashMap<egui::Key, u32>,
@@ -146,6 +143,7 @@ impl Devices {
             self.contacts.clear();
         }
     }
+    #[cfg(test)]
     pub fn look_delta(&self) -> (i32, i32) {
         self.look
     }

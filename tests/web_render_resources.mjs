@@ -11,7 +11,7 @@ assert.ok(Object.isFrozen(renderResources(large)));
 for(const invalid of [
  {limits:{render_profile:'unlimited',hard_memory_bytes:256*MiB}},
  {limits:{render_profile:'large-images-v2',hard_memory_bytes:256*MiB}},
- {...large,builtin_engine:'zelda3-45a149d8'}, {...large,builtin_engine:''}, {...large,builtin_engine:false},
+ {...large,builtin_engine:'port-owned-engine'}, {...large,builtin_engine:''}, {...large,builtin_engine:false},
  {limits:{...large.limits,hard_memory_bytes:64*MiB}},
  {limits:{...large.limits,hard_memory_bytes:1024*MiB}},
  {limits:{...large.limits,hard_memory_bytes:'268435456'}},

@@ -9,5 +9,5 @@ publish = false
 tempfile = "3"
 
 [target.'cfg(windows)'.dependencies]
-gamepkg-takedawn-windows-runner = { path = "../../../engines/takedawn/windows-runner" }
+gamepkg-native-windows-runner = { path = "../../../engines/native-services/windows-runner" }
 windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Isolation", "Win32_System_Memory"] }

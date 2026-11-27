@@ -1,7 +1,7 @@
 //! Ordinary source-game compilation using the pinned portable Rust toolchain.
 //! The compiler and linker remain inside an AppContainer and owned job.
 use anyhow::{ensure, Context, Result};
-use gamepkg_takedawn_windows_runner::Sandbox;
+use gamepkg_native_windows_runner::Sandbox;
 use std::{
     ffi::OsString,
     path::{Path, PathBuf},
@@ -11,9 +11,8 @@ use std::{
 const C_SECTION_FLAGS: &[&str] = &[
     "-ffunction-sections",
     "-fdata-sections",
-    // These C engines never unwind (Rust also uses panic=abort). On x64
-    // MinGW, unwind-table references otherwise retain unused emulator-only
-    // functions when GNU ld collects sections, unlike the ELF/i686 builds.
+    // Native source games do not unwind (Rust uses panic=abort). On x64 MinGW,
+    // unwind tables otherwise retain unused functions during section collection.
     "-fno-asynchronous-unwind-tables",
     "-fno-unwind-tables",
 ];
@@ -25,16 +24,15 @@ fn environment(
 ) -> Result<(PathBuf, Vec<(OsString, OsString)>)> {
     // Third-party CRTs must receive ordinary drive/UNC working and temp paths;
     // keep canonical extended paths for image selection and ACL operations.
-    let directory = crate::takedawn_windows_sdk::compiler_path(stage)?;
-    let temporary = crate::takedawn_windows_sdk::compiler_path(&stage.join("tmp"))?;
+    let directory = crate::windows_sdk::compiler_path(stage)?;
+    let temporary = crate::windows_sdk::compiler_path(&stage.join("tmp"))?;
     std::fs::create_dir_all(&temporary)?;
-    let binary = crate::takedawn_windows_sdk::compiler_path(&toolchain.join("bin"))?;
-    let linker = crate::takedawn_windows_sdk::compiler_path(
+    let binary = crate::windows_sdk::compiler_path(&toolchain.join("bin"))?;
+    let linker = crate::windows_sdk::compiler_path(
         &toolchain.join(format!("lib/rustlib/{target}/bin/self-contained")),
     )?;
-    let llvm = crate::takedawn_windows_sdk::compiler_path(
-        &toolchain.join(format!("lib/rustlib/{target}/bin")),
-    )?;
+    let llvm =
+        crate::windows_sdk::compiler_path(&toolchain.join(format!("lib/rustlib/{target}/bin")))?;
     let values = vec![
         (
             "SystemRoot".into(),
@@ -75,14 +73,8 @@ pub(super) fn compile(
 ) -> Result<PathBuf> {
     crate::build_policy::require(manifest.builtin_engine.as_deref())?;
 
-    ensure!(
-        manifest.builtin_engine.as_deref().is_none_or(
-            |profile| profile == crate::doom::PROFILE || profile == crate::zelda3::PROFILE
-        ),
-        "this engine requires its reviewed native builder"
-    );
     crate::source::parse_build_tree(stage)?;
-    let (toolchain, target) = crate::takedawn_windows_sdk::prepare_source(root)?;
+    let (toolchain, target) = crate::windows_sdk::prepare_source(root)?;
     let toolchain = toolchain.canonicalize()?;
     let stage = stage.canonicalize()?;
     let output = stage.join("game.exe");
@@ -109,22 +101,10 @@ pub extern "C" fn __gamepkg_native_entry()->i32 {
 "#,
     )?;
     let archive = stage.join("game.a");
-    let prepared_engine = if let Some(profile) = manifest.builtin_engine.as_deref() {
-        let plan = super::engine_sources::stage(&stage, profile)?;
-        let sdk = crate::takedawn_windows_sdk::prepare(root)?;
-        Some((plan, sdk.join("llvm-mingw-windows").canonicalize()?))
-    } else {
-        None
-    };
     // This bounds actual compilation/linking. Verified tool installation has
     // its separate bounded download/verification path before the clock starts.
-    let end =
-        Instant::now() + Duration::from_secs(if prepared_engine.is_some() { 180 } else { 60 });
-    let objects = if let Some((plan, llvm)) = &prepared_engine {
-        compile_engine(&stage, plan, llvm, target, settings.optimize_builds, end)?
-    } else {
-        Vec::new()
-    };
+    let end = Instant::now() + Duration::from_secs(60);
+    let objects: Vec<PathBuf> = Vec::new();
     let mut args: Vec<OsString> = [
         "--edition=2021",
         "-Awarnings",
@@ -151,11 +131,8 @@ pub extern "C" fn __gamepkg_native_entry()->i32 {
     if settings.optimize_builds {
         args.extend(["-C", "lto=fat", "-C", "codegen-units=1"].map(Into::into));
     }
-    if let Some((plan, _)) = &prepared_engine {
-        args.extend(["--cfg".into(), plan.configuration.into()]);
-    }
     args.push("-o".into());
-    args.push(crate::takedawn_windows_sdk::compiler_path(&archive)?.into_os_string());
+    args.push(crate::windows_sdk::compiler_path(&archive)?.into_os_string());
     let _ = run(
         &toolchain.join("bin/rustc.exe"),
         &args,
@@ -173,7 +150,7 @@ pub extern "C" fn __gamepkg_native_entry()->i32 {
     drop(bytes);
     let lib = toolchain.join(format!("lib/rustlib/{target}/lib"));
     let file = |path: &Path| -> Result<OsString> {
-        Ok(crate::takedawn_windows_sdk::compiler_path(path)?.into_os_string())
+        Ok(crate::windows_sdk::compiler_path(path)?.into_os_string())
     };
     let machine = match target {
         "x86_64-pc-windows-gnu" => "i386pep",
@@ -197,15 +174,6 @@ pub extern "C" fn __gamepkg_native_entry()->i32 {
     for object in &objects {
         link.push(file(object)?);
     }
-    if let Some((plan, _)) = &prepared_engine {
-        for name in plan.wraps {
-            link.push(format!("--wrap={name}").into());
-        }
-        if plan.label == "doom" {
-            link.extend(["--wrap=_mkdir".into(), "--wrap=_access".into()]);
-        }
-    }
-
     link.push("-L".into());
     link.push(file(&lib.join("self-contained"))?);
     // Native libraries required by the pinned Windows GNU Rust std and CRT.
@@ -238,111 +206,6 @@ pub extern "C" fn __gamepkg_native_entry()->i32 {
     Ok(output)
 }
 
-fn compile_engine(
-    stage: &Path,
-    plan: &super::engine_sources::Plan,
-    llvm: &Path,
-    target: &str,
-    optimize: bool,
-    end: Instant,
-) -> Result<Vec<PathBuf>> {
-    let (c_target, machine) = match target {
-        "i686-pc-windows-gnu" => ("i686-w64-mingw32", 0x14cu16),
-        "x86_64-pc-windows-gnu" => ("x86_64-w64-mingw32", 0x8664u16),
-        _ => anyhow::bail!("unsupported Windows C target"),
-    };
-    if plan.label == "doom" {
-        // Windows mkdir has one argument. The virtual implementation still
-        // refuses directory creation; keep its callable ABI exact as well.
-        let storage = stage.join("engines/doom/adapters/storage.h");
-        let text = std::fs::read_to_string(&storage)?;
-        let previous =
-            "int __wrap_mkdir(const char *path,mode_t mode) { (void)path;(void)mode; return -1; }";
-        ensure!(
-            text.matches(previous).count() == 1,
-            "pinned virtual mkdir changed"
-        );
-        std::fs::write(
-            storage,
-            text.replace(
-                previous,
-                "int __wrap_mkdir(const char *path) { (void)path; return -1; }",
-            ),
-        )?;
-        use std::io::Write;
-        let mut adapter = std::fs::OpenOptions::new()
-            .append(true)
-            .open(stage.join("engines/doom/adapters/engine.c"))?;
-        adapter.write_all(b"\nint __wrap__mkdir(const char *p){return __wrap_mkdir(p);}\nint __wrap__access(const char *p,int m){return __wrap_access(p,m);}\n")?;
-    }
-    let objects = stage.join("objects");
-    std::fs::create_dir(&objects)?;
-    let mut names = std::collections::BTreeSet::new();
-    for source in &plan.sources {
-        let name = Path::new(source)
-            .file_name()
-            .context("invalid reviewed C source")?;
-        let name = Path::new(name).with_extension("o").into_os_string();
-        ensure!(
-            names.insert(name),
-            "reviewed C sources have colliding object names"
-        );
-    }
-    let identity = crate::verify::digest(stage.as_os_str().as_encoded_bytes());
-    let sandbox = Sandbox::open(&format!("GamePKG.EngineCompiler.{}", &identity[..32]))?;
-    sandbox.grant_runtime(llvm)?;
-    sandbox.grant_saves(stage)?;
-    let (_, mut values) = environment(stage, llvm, target)?;
-    values
-        .iter_mut()
-        .find(|(name, _)| name == "PATH")
-        .unwrap()
-        .1 = crate::takedawn_windows_sdk::compiler_path(&llvm.join("bin"))?.into_os_string();
-    let directory = crate::takedawn_windows_sdk::compiler_path(&objects)?;
-    let mut private_root = crate::windows_compiler::PrivateToolRoot::open(llvm)?;
-    let compiler = private_root.path().join("bin").join("clang-23.exe");
-    let mut args: Vec<OsString> = [
-        "-no-canonical-prefixes",
-        "-target",
-        c_target,
-        "-c",
-        "-fno-builtin",
-        "-fno-strict-aliasing",
-        "-D__USE_MINGW_ANSI_STDIO=0",
-        "-D_CRTIMP=",
-        if optimize { "-O3" } else { "-O0" },
-        "-march=native",
-    ]
-    .map(Into::into)
-    .into();
-    args.extend(C_SECTION_FLAGS.iter().map(OsString::from));
-    for include in &plan.includes {
-        args.push(format!("-I../{include}").into());
-    }
-    for definition in plan.definitions {
-        args.push(format!("-D{definition}").into());
-    }
-    args.extend(plan.sources.iter().map(|path| format!("../{path}").into()));
-    crate::windows_compiler::run(&compiler, &args, &directory, &values, &sandbox, end)
-        .with_context(|| format!("native {} C engine compilation", plan.label))?;
-    private_root.close()?;
-    let mut outputs = Vec::new();
-    for name in names {
-        let path = objects.join(name);
-        let bytes = crate::files::read_regular(&path, 64 * 1048576, false)?;
-        ensure!(
-            bytes.len() > 20 && u16::from_le_bytes([bytes[0], bytes[1]]) == machine,
-            "wrong native C engine object architecture"
-        );
-        outputs.push(path);
-    }
-    ensure!(
-        outputs.len() == plan.sources.len(),
-        "incomplete native engine object set"
-    );
-    Ok(outputs)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -350,12 +213,12 @@ mod tests {
     #[test]
     #[ignore = "downloads the reviewed Windows C toolchain and checks confined compilation"]
     fn reviewed_c_compiler_preserves_target_and_denies_host_include() {
-        assert!(gamepkg_takedawn_windows_runner::supports_amd64_tools());
+        assert!(gamepkg_native_windows_runner::supports_amd64_tools());
         let root = tempfile::Builder::new()
             .prefix("gamepkg C compiler with spaces ")
             .tempdir()
             .unwrap();
-        let sdk = crate::takedawn_windows_sdk::prepare(root.path()).unwrap();
+        let sdk = crate::windows_sdk::prepare(root.path()).unwrap();
         let llvm = sdk.join("llvm-mingw-windows").canonicalize().unwrap();
         // The pinned SDK's clang.exe is a launcher that starts clang-23.
         // Select its verified frontend directly so no launcher lookup or
@@ -375,7 +238,7 @@ mod tests {
         )).unwrap();
         let canary = root.path().join("host-canary.h");
         std::fs::write(&canary, "#define GAMEPKG_HOST_CANARY 0x5137\n").unwrap();
-        let canary_path = crate::takedawn_windows_sdk::compiler_path(&canary)
+        let canary_path = crate::windows_sdk::compiler_path(&canary)
             .unwrap()
             .to_string_lossy()
             .replace('\\', "/");
@@ -391,7 +254,7 @@ mod tests {
         sandbox.grant_runtime(&llvm).unwrap();
         sandbox.grant_saves(&stage).unwrap();
         let (directory, mut values) = environment(&stage, &llvm, target).unwrap();
-        let path = crate::takedawn_windows_sdk::compiler_path(&llvm.join("bin")).unwrap();
+        let path = crate::windows_sdk::compiler_path(&llvm.join("bin")).unwrap();
         values
             .iter_mut()
             .find(|(name, _)| name == "PATH")
@@ -431,10 +294,10 @@ mod tests {
             ("canonical", compiler.clone()),
             (
                 "ordinary",
-                crate::takedawn_windows_sdk::compiler_path(&compiler).unwrap(),
+                crate::windows_sdk::compiler_path(&compiler).unwrap(),
             ),
         ] {
-            use gamepkg_takedawn_windows_runner::{Event, Launch, Session};
+            use gamepkg_native_windows_runner::{Event, Launch, Session};
             let output = stage.join(format!("clang-{label}-startup.log"));
             let launch = Launch {
                 executable: image,
@@ -559,7 +422,7 @@ mod tests {
         c_target: &str,
         execute: &impl Fn(&[OsString]) -> Result<Vec<u8>>,
     ) {
-        let (rust, target) = crate::takedawn_windows_sdk::prepare_source(root).unwrap();
+        let (rust, target) = crate::windows_sdk::prepare_source(root).unwrap();
         let linker = rust.join(format!("lib/rustlib/{target}/bin/self-contained/ld.exe"));
         let (machine, entry) = if c_target.starts_with("i686") {
             ("i386pe", "_entry")
@@ -591,11 +454,11 @@ mod tests {
                 machine.into(),
                 "--gc-sections".into(),
                 format!("--entry={entry}").into(),
-                crate::takedawn_windows_sdk::compiler_path(&stage.join(format!("{name}.o")))
+                crate::windows_sdk::compiler_path(&stage.join(format!("{name}.o")))
                     .unwrap()
                     .into_os_string(),
                 "-o".into(),
-                crate::takedawn_windows_sdk::compiler_path(&output)
+                crate::windows_sdk::compiler_path(&output)
                     .unwrap()
                     .into_os_string(),
             ];
@@ -616,31 +479,6 @@ mod tests {
             }
         }
         println!("Verified reviewed C section collection: dead missing call discarded; live missing call rejected.");
-    }
-
-    #[test]
-    fn retired_engine_builds_are_denied_before_tools() {
-        let root = tempfile::tempdir().unwrap();
-        let library = root.path().join("library");
-        for port in ["doom", "zelda3"] {
-            let source = Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("ports")
-                .join(port);
-            let package = root.path().join(format!("{port}.gamepkg"));
-            crate::pack::pack(&source, &package, &[81; 32]).unwrap();
-            let manifest = crate::registry::install(&library, &package, true).unwrap();
-            assert!(!super::super::build_supported(&manifest));
-            assert!(!super::super::play_supported(&manifest));
-            let error = super::super::compile(&library, &manifest.id).unwrap_err();
-            assert!(
-                error.to_string().contains("requires migration"),
-                "{error:#}"
-            );
-            for directory in ["builds", "build-locks", "native-sdk", "shader-builds"] {
-                assert!(!library.join(directory).exists(), "{directory}");
-            }
-            println!("Verified Windows legacy engine admission denial: {port}; no build artifacts");
-        }
     }
 
     #[test]
@@ -690,7 +528,7 @@ fn main() {
         ))
         .unwrap();
         let settings = crate::settings::Settings::default();
-        let (toolchain, target) = crate::takedawn_windows_sdk::prepare_source(root.path()).unwrap();
+        let (toolchain, target) = crate::windows_sdk::prepare_source(root.path()).unwrap();
         let toolchain = toolchain.canonicalize().unwrap();
         let linker = toolchain.join(format!("lib/rustlib/{target}/bin/self-contained/ld.exe"));
         let version = run(
@@ -710,7 +548,7 @@ fn main() {
         let binary = compile(root.path(), &stage, &manifest, &settings).unwrap();
         let bytes = std::fs::read(&binary).unwrap();
         super::super::validate_executable(&bytes).unwrap();
-        let (toolchain, target) = crate::takedawn_windows_sdk::prepare_source(root.path()).unwrap();
+        let (toolchain, target) = crate::windows_sdk::prepare_source(root.path()).unwrap();
         let diagnostic = run(
             &binary.canonicalize().unwrap(),
             &["--probe".into()],

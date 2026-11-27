@@ -390,7 +390,7 @@ impl Player {
         let sink = self.sink.clone();
         Arc::new(move |commands| sink.effect_batch(commands))
     }
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(test)]
     pub(crate) fn sink(&self) -> Sink {
         self.sink.clone()
     }
@@ -811,56 +811,6 @@ mod tests {
         }
         assert!(!full.append_stereo(&[1, 2]));
         assert!(!full.append(&[1]));
-    }
-    #[test]
-    #[cfg(all(target_os = "linux", feature = "gui"))]
-    #[ignore = "requires GAMEPKG_CUBE2_TEST_ROOT, its cached engine, original data and ALSA null device"]
-    fn original_cube2_stereo_reaches_the_output_callback() {
-        assert!(std::env::var_os("ALSA_CONFIG_PATH").is_some());
-        let root = std::path::PathBuf::from(std::env::var_os("GAMEPKG_CUBE2_TEST_ROOT").unwrap());
-        let mut game = crate::runtime::Game::load(&root, "com.gamepkg.cube2").unwrap();
-        assert_eq!(game.audio_channels(), 2);
-        game.cube2_key(56, true, false, 0);
-        game.step(0).unwrap();
-        game.cube2_key(56, false, false, 0);
-        game.cube2_text("mode 0; map complex; showgui \"\"");
-        game.step(0).unwrap();
-        game.cube2_key(40, true, false, 0);
-        game.step(0).unwrap();
-        game.cube2_key(40, false, false, 0);
-        game.step(0).unwrap();
-        let mut audible = false;
-        let mut separated = false;
-        for _ in 0..120 {
-            game.cube2_desktop_input(1 << 16, 0, 0);
-            game.step(0).unwrap();
-            assert_eq!(game.audio_channels(), 2);
-            assert_eq!(game.audio_frame().len() % 2, 0);
-            audible |= game.audio_frame().iter().any(|&sample| sample != 0);
-            separated |= game
-                .audio_frame()
-                .as_chunks::<2>()
-                .0
-                .iter()
-                .any(|pair| pair[0] != pair[1]);
-        }
-        assert!(audible, "Original engine emitted no sound");
-        assert!(separated, "Original stereo channels were collapsed to mono");
-        let output = Player::new(100).unwrap();
-        game.background_player().unwrap();
-        game.cube2_audio_sink(Some(output.sink()));
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-        while output.non_silent_frames() == 0 {
-            game.cube2_desktop_input(1 << 16, 0, 0);
-            game.step(0).unwrap();
-            assert!(
-                std::time::Instant::now() < deadline,
-                "Background stereo did not reach the device callback"
-            );
-            std::thread::sleep(std::time::Duration::from_millis(10));
-        }
-        assert!(output.error().is_none());
-        game.finish().unwrap();
     }
     #[test]
     #[ignore = "run only with ALSA_CONFIG_PATH pointing to a null output device"]

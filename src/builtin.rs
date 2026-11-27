@@ -1,34 +1,15 @@
-//! Only named, host-reviewed engines can be built or loaded.
+//! Game engines are owned by Ports, not by the host. Only source-only native
+//! and Wasm games are admitted by this binary.
 use anyhow::{bail, Result};
-pub fn filename(profile: &str) -> Result<&'static str> {
-    match profile {
-        crate::zelda3::PROFILE => Ok("zelda3.wasm"),
-        crate::doom::PROFILE => Ok("doom.wasm"),
-        _ => bail!("unsupported builtin engine"),
-    }
+
+pub fn filename(_profile: &str) -> Result<&'static str> {
+    bail!("builtin game engines are owned by Ports")
 }
-pub fn memory(profile: &str) -> Result<u64> {
-    match profile {
-        crate::zelda3::PROFILE => Ok(crate::zelda3::MEMORY),
-        crate::doom::PROFILE => Ok(crate::doom::MEMORY),
-        crate::cube2::PROFILE => Ok(crate::cube2::MEMORY),
-        profile if crate::external_engine::get(profile).is_some() => {
-            Ok(crate::external_engine::get(profile).unwrap().memory)
-        }
-        _ => bail!("unsupported builtin engine"),
-    }
+
+pub fn validate(_profile: &str, _bytes: &[u8]) -> Result<()> {
+    bail!("builtin game engines are owned by Ports")
 }
-pub fn validate(profile: &str, bytes: &[u8]) -> Result<()> {
-    match profile {
-        crate::zelda3::PROFILE => crate::zelda3::validate_current(bytes),
-        crate::doom::PROFILE => crate::doom::validate_current(bytes),
-        _ => bail!("unsupported builtin engine"),
-    }
-}
-pub fn build(profile: &str) -> Result<Vec<u8>> {
-    match profile {
-        crate::zelda3::PROFILE => crate::zelda3::build(),
-        crate::doom::PROFILE => crate::doom::build(),
-        _ => bail!("unsupported builtin engine"),
-    }
+
+pub fn build(_profile: &str) -> Result<Vec<u8>> {
+    bail!("builtin game engines are owned by Ports")
 }

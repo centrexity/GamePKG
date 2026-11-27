@@ -58,7 +58,7 @@ impl Controller {
         let (focused, release, clicked) = ctx.input(|input| {
             (
                 input.focused,
-                super::cube2_input::release_requested(input),
+                release_requested(input),
                 input.pointer.any_pressed(),
             )
         });
@@ -253,6 +253,19 @@ pub(super) fn release_pointer(ctx: &egui::Context) {
     ctx.send_viewport_cmd(ViewportCommand::CursorGrab(CursorGrab::None));
     ctx.send_viewport_cmd(ViewportCommand::CursorVisible(true));
     ctx.set_cursor_icon(CursorIcon::Default);
+}
+pub(super) fn release_requested(input: &egui::InputState) -> bool {
+    (input.modifiers.ctrl && input.modifiers.alt)
+        || input.events.iter().any(|event| {
+            matches!(
+                event,
+                egui::Event::Key {
+                    pressed: true,
+                    modifiers,
+                    ..
+                } if modifiers.ctrl && modifiers.alt
+            )
+        })
 }
 #[cfg(test)]
 mod tests {

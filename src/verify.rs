@@ -62,12 +62,6 @@ pub(crate) fn verify_checked_with_policy(
     if scan_source {
         crate::source::scan(pkg)?;
     }
-    if checked.manifest.builtin_engine.as_deref() == Some(crate::cube2::PROFILE) {
-        crate::cube2::validate_recipe(pkg)?;
-    }
-    if checked.manifest.builtin_engine.as_deref() == Some(crate::takedawn::PROFILE) {
-        crate::takedawn::validate_recipe(pkg)?;
-    }
     if let Some(engine) = checked
         .manifest
         .builtin_engine

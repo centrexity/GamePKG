@@ -1268,7 +1268,7 @@ fn native_indexed_geometry_depth_msaa_cube_mips_and_invalid_resources() {
     }
     gpu.call(104, &z32.to_le_bytes(), 0).unwrap();
     gpu.call(104, &c.to_le_bytes(), 0).unwrap();
-    // NVI1 guards run before GPU execution, and cached validation is invalidated
+    // Typed template guards run before GPU execution, and cached validation is invalidated
     // by every uniform edit. Vertex NaN bookkeeping also recovers after edits.
     let mut words = vec![0u32; gamepkg::shaders::nv2a::BYTES / 4];
     words[..16].copy_from_slice(&[
