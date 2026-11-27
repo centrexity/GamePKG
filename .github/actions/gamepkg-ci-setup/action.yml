@@ -1,0 +1,71 @@
+name: GamePKG all-features CI setup
+description: Install common prerequisites and build release binaries for one all-features CI shard
+inputs:
+  profile:
+    description: Shard profile; one of gates, unit, integration, gui or browser
+    required: true
+runs:
+  using: composite
+  steps:
+      - name: Prepare target directory
+        shell: bash
+        run: mkdir -p target
+      - name: Install preview codecs
+        shell: bash
+        run: bash tools/ci_ubuntu_apt.sh update && bash tools/ci_ubuntu_apt.sh install -y ffmpeg g++ libsdl2-dev openssl
+      - name: Install Rust tools
+        shell: bash
+        run: rustup update stable && rustup default stable && rustup component add rustfmt clippy
+      - name: Install audio development headers
+        shell: bash
+        run: bash tools/ci_ubuntu_apt.sh update && bash tools/ci_ubuntu_apt.sh install -y libasound2-dev libudev-dev libsdl2-mixer-dev libmpg123-dev libmpfr-dev
+      - name: Install virtual display tools
+        shell: bash
+        run: |
+          # Selenium's recommended Chromium package is a Snap transition on
+          # Ubuntu. Use the runner image's matching Chrome/ChromeDriver pair
+          # instead of making GUI tests depend on a Snap Store transaction.
+          bash tools/ci_ubuntu_apt.sh install -y --no-install-recommends xvfb xdotool metacity x11-utils imagemagick optipng tesseract-ocr python3-pil python3-xlib python3-selenium python3-websocket zenity libxtst-dev libsdl2-dev libsdl2-ttf-dev libsdl2-image-dev pkg-config libxkbcommon-x11-0 libgl1-mesa-dri libvulkan1 libvulkan-dev mesa-vulkan-drivers
+          chrome_browser=$(readlink -f "$(command -v google-chrome)")
+          chrome_driver="${CHROMEWEBDRIVER:-/nonexistent}/chromedriver"
+          if [[ ! -x "$chrome_driver" ]]; then chrome_driver=$(command -v chromedriver); fi
+          chrome_driver=$(readlink -f "$chrome_driver")
+          test -x "$chrome_browser" && test -x "$chrome_driver"
+          sudo ln -sf "$chrome_browser" /usr/local/bin/chromium
+          sudo ln -sf "$chrome_driver" /usr/local/bin/chromedriver
+          chromium --version
+          chromedriver --version
+          timeout 30s chromium --headless=new --no-sandbox --disable-dev-shm-usage --user-data-dir="$RUNNER_TEMP/gamepkg-browser-smoke" --dump-dom about:blank
+      - name: Build decoder and converter companions
+        if: ${{ inputs.profile != 'gates' && inputs.profile != 'unit' }}
+        shell: bash
+        run: |
+          rustup target add wasm32-unknown-unknown
+          python3 tools/build_audio_companion.py --github-env
+      - name: Embed audio companions in CLI and GUI
+        if: ${{ inputs.profile != 'gates' && inputs.profile != 'unit' }}
+        shell: bash
+        run: cargo build --locked --release --all-features --bins
+      - name: Install isolated build prerequisites
+        if: ${{ inputs.profile != 'gates' && inputs.profile != 'unit' }}
+        shell: bash
+        run: bash tools/ci_ubuntu_apt.sh update && bash tools/ci_ubuntu_apt.sh install -y bubblewrap clang-18 lld-18 wasi-libc libclang-rt-18-dev-wasm32 && rustup target add wasm32-unknown-unknown
+      - name: Install pinned shader compiler
+        if: ${{ inputs.profile != 'gates' && inputs.profile != 'unit' }}
+        shell: bash
+        run: |
+          python3 tools/install_slang.py "/tmp/gamepkg-slang"
+          echo "GAMEPKG_SLANG_ROOT=/tmp/gamepkg-slang" >> "$GITHUB_ENV"
+      - name: Install pinned DXC for DXIL shaders
+        if: ${{ inputs.profile == 'integration' }}
+        shell: bash
+        run: |
+          python3 tools/install_dxc.py "/tmp/gamepkg-dxc"
+          echo "GAMEPKG_DXC_ROOT=/tmp/gamepkg-dxc" >> "$GITHUB_ENV"
+      - name: Stage compiler for privileged namespace tests
+        if: ${{ inputs.profile != 'gates' && inputs.profile != 'unit' }}
+        shell: bash
+        run: |
+          sudo cp -a "$(rustc --print sysroot)" /tmp/gamepkg-ci-toolchain
+          sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup rustup toolchain link gamepkg-ci /tmp/gamepkg-ci-toolchain
+          sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup rustup default gamepkg-ci

@@ -53,7 +53,7 @@ class GuiToolEnvironmentTest(unittest.TestCase):
 
     def test_versioned_app_title_and_exact_game_title(self):
         for title, accepted, rejected in [
-            ('GamePKG', 'GamePKG 0.1.26', ['GamePKG', 'GamePKG settings', 'GamePKG 0x1x26']),
+            ('GamePKG', 'GamePKG 0.1.27', ['GamePKG', 'GamePKG settings', 'GamePKG 0x1x27']),
             ('org.example.game', 'org.example.game', ['orgXexampleXgame', 'org.example.game settings']),
         ]:
             def run(arguments, **kwargs):

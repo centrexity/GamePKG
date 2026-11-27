@@ -1,6 +1,6 @@
 # Game launch options
 
-The signed manifest can declare `[launch_options]`. GamePKG 0.1.26 supports these options for the reviewed Takedawn native engine on Linux and Windows. Other engines reject the table until their renderer has an explicit adapter. Older packages without this table keep their existing renderer settings.
+The signed manifest can declare `[launch_options]`. GamePKG 0.1.27 supports these options for the reviewed Takedawn native engine on Linux and Windows. Other engines reject the table until their renderer has an explicit adapter. Older packages without this table keep their existing renderer settings.
 
 ```toml
 [launch_options]

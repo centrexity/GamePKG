@@ -15,7 +15,7 @@ checks the actual settings reader/writer, precedence, reset and source guards.
 The performance target is under 10 ms of frame work while gameplay remains
 paced at 60 FPS (16.67 ms between frames); it is not a qualification claim.
 
-The current unreleased recipe is 0.1.14 and requires the 0.1.26 development
+The current unreleased recipe is 0.1.14 and requires the 0.1.27 development
 app. It retains 24,003 prepared Rust game functions across 487 units and 24,035
 native exports. Linux x64 and standalone Windows x64 tools compile and link the
 native game; players need neither Python nor WSL. The normal signed Linux
