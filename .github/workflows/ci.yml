@@ -60,7 +60,6 @@ jobs:
         run: |
           df -h . /tmp
           free -h
-        run: python3 tools/check_controller_look.py
       - name: Test browser guest path protections
         run: node tests/web_path_attacks.mjs
       - name: Test bounded compressed asset storage and ownership
@@ -181,7 +180,6 @@ jobs:
           python3 tools/check_mono_music_schedule.py
           cc -std=c11 -Wall -Wextra -Werror tools/audio-decoder/resample_reference.c -o target/sdl-resample-reference $(pkg-config --cflags --libs sdl2)
           GAMEPKG_SDL_RESAMPLE_REFERENCE="$PWD/target/sdl-resample-reference" cargo test --locked --all-features --test audio_resampler -- --ignored
-        run: python3 tools/check_controller_look.py
       - name: Verify production touch camera with real egui
         run: |
           cargo fetch --locked
