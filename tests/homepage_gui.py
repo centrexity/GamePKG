@@ -6,7 +6,7 @@ from pathlib import Path
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json, os, shutil, subprocess, sys, tempfile, threading, time
-from gui_test_support import start_display
+from gui_test_support import start_display, wait_game_frame
 from arkanoo_legacy_support import wasm_fixture_manifest
 
 PROJECT = Path(__file__).resolve().parents[1]
@@ -79,7 +79,7 @@ result
             wait(find,'game window')
             window=windows[0]
             run('xdotool','windowsize',window,'640','480','windowfocus',window)
-            time.sleep(.5)
+            wait_game_frame(window, env, root)
             assert not receipt.exists(), 'Game opened a browser without an action'
             for count in [1,2]:
                 run('xdotool','mousemove','--window',window,'600','405','click','1')
