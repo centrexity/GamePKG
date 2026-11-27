@@ -160,7 +160,11 @@ packaging carries this matching bundle with the app.
 
 The Linux in-process launcher verifies the executable receipt, copies the
 verified binary into a private launch directory and enters a systemd memory
-scope using the signed hard limit and no swap. Bubblewrap mounts the required
+scope using the signed hard limit and no swap. Before launch it requires
+receipt format 2 with a signed `source` attestation matching the installed
+package digest, tree and source-kit identities, scanner policy, SDK, compiler
+and target identities. Older receipts without that attestation fail closed.
+The launcher does not rescan guest source at launch. Bubblewrap mounts the required
 system libraries, selected local display socket and platform devices. It uses
 private user, PID, IPC and UTS namespaces and a private network namespace when
 the signed manifest disables networking. It mounts the open ROM descriptors
@@ -3199,7 +3203,9 @@ connection. Achievements refer to signed manifest indexes and are recorded
 in the library. Saves use an isolated quota and atomic replacement.
 
 Build verifies the signed kit, scans dependency-free source, injects the
-SDK, and audits game objects before the trusted link. The local cache
-authenticates the receipt and checks SDK, source kit, target and executable
-identities before Play. The game worker releases inherited descriptors and
+SDK, and audits game objects before the trusted link. Only after that scan
+succeeds does it write and sign a source-attested receipt. The local cache
+authenticates the receipt and checks its source attestation, scanner policy,
+SDK, source kit, target and executable identities before Play; it does not
+repeat source admission. The game worker releases inherited descriptors and
 installs its syscall restrictions before entering game code.

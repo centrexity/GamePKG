@@ -133,7 +133,7 @@ corruption and 112-second repair retaining all 487 object hashes/timestamps and
 signed package identity. That check uses no original game media. Physical Windows
 gameplay qualification remains open. The v14 evidence below remains specific to
 that earlier kit.
-The published 0.1.17 app does not include this native engine. A Windows host build
+The published 0.1.29 app includes this native engine. A Windows host build
 or asset-free window test does not prove original-game Vulkan/audio/controller
 behavior on physical Windows hardware. The v14 Windows signed Build/repair
 gate passes in [run 40446319498](https://github.com/centrexity/GamePKG/actions/runs/40446319498),

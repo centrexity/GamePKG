@@ -1077,8 +1077,8 @@ permit adjacent texels explicitly. Browser samples use explicit pixel rounding,
 matching desktop sample coordinates. Existing gameplay/editor/file workflows
 also run separately. Original viewport clipping, whole-frame matching, remaining
 background/menu/HUD/audio and platform requirements stay open. Recipe 0.1.29 is a
-source-only change; the host version and published binary/package releases stay
-unchanged.
+source-only change for this port; host 0.1.29 publishes the app binaries, but no
+new signed package release is created for the recipe.
 
 ### Campaign animated backgrounds and component input constants
 

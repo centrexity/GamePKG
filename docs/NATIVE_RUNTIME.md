@@ -168,7 +168,12 @@ or direct system declarations.
 The native compiler runs with fixed GamePKG arguments in an isolated work
 area. It emits optimized objects. The host audits the exact objects for
 forbidden imports before linking them to the trusted compatibility runtime.
-Build receipts authenticate the resulting executable.
+Build completes source admission before it writes or signs a receipt. The signed
+receipt binds the verified package digest, tree and source-kit identities,
+scanner policy, SDK, compiler and target identities to the executable hash.
+Launch checks that attestation and the executable hash before running code; it
+does not repeat the source scan. Receipts without the required attestation fail
+closed with a rebuild requirement.
 
 GamePKG copies the verified executable into a private execution directory.
 Its Linux namespace limits access to system resources, display and approved

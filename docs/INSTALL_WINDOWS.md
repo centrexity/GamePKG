@@ -12,8 +12,8 @@ The current development source (commit `0f9c0a0` and later) connects the default
 **Build** and **Play** actions to direct Windows x86/x64 machine code for ordinary
 Rust game packages. Its verified Rust compiler, standard library and native
 linker are prepared automatically. Players need neither WSL nor Python. The
-published 0.1.17 app and older engine-only 0.1.18 hardware previews do not include
-this newer integration.
+published 0.1.29 app includes this integration; older engine-only 0.1.18
+hardware previews do not.
 
 Import a signed package, approve its creator, open the game page and select
 **Build**. Its native build is selected automatically for Play. Native source
@@ -45,8 +45,8 @@ standalone Rust/Clang tools prepared through Settings or `gamepkg setup-native-t
 it needs neither WSL nor Python. The older Linux-only package must be updated
 before building it on Windows. Recipe 0.1.4 selects v15; 0.1.3 selects v14 and older admitted recipes
 retain creator/save continuity but can stop on unsupported execution and need
-an update. This is an unreleased candidate and requires the development app;
-the published 0.1.17 app does not include this native engine.
+an update. The published 0.1.29 app includes this native engine; older
+published apps do not.
 
 In the development app, choose **Settings → Prepare native build tools**, then
 save settings with **Memory ceiling** set to at least 4096 MiB. Import the signed

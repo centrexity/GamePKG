@@ -36,6 +36,10 @@ runs:
           chromium --version
           chromedriver --version
           timeout 30s chromium --headless=new --no-sandbox --disable-dev-shm-usage --user-data-dir="$RUNNER_TEMP/gamepkg-browser-smoke" --dump-dom about:blank
+      - name: Install native launch sandbox for unit tests
+        if: ${{ inputs.profile == 'unit' }}
+        shell: bash
+        run: bash tools/ci_ubuntu_apt.sh update && bash tools/ci_ubuntu_apt.sh install -y --no-install-recommends bubblewrap
       - name: Build decoder and converter companions
         if: ${{ inputs.profile != 'gates' && inputs.profile != 'unit' }}
         shell: bash

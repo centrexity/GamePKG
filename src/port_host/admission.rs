@@ -25,6 +25,13 @@ impl CheckedSources {
 
     /// Authenticated launch snapshot only. The signed native build receipt must
     /// be validated against this identity before any executable can run.
+    #[cfg(all(
+        feature = "gui",
+        any(
+            all(windows, any(target_arch = "x86", target_arch = "x86_64")),
+            all(target_os = "linux", target_arch = "x86_64")
+        )
+    ))]
     pub(crate) fn verify_authenticated(package: &mut crate::archive::Package) -> Result<Self> {
         Self::verify_with_policy(package, false)
     }
