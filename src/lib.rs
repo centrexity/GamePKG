@@ -67,6 +67,8 @@ pub mod audio;
 #[cfg(feature = "gui")]
 pub mod gpu;
 
+#[doc(hidden)]
+pub mod host_simd;
 pub mod hostapi;
 
 pub mod updates;

@@ -330,3 +330,60 @@ fn main() {{
     assert_eq!(fs::read(save_dir.join("new")).unwrap(), b"Data");
     assert!(!asset_dir.join("missing").exists());
 }
+
+#[test]
+fn sampler_descriptor_api_rejects_unbounded_values_before_transport() {
+    let base = local_client::Sampler {
+        min_linear: true,
+        mag_linear: true,
+        mip_linear: true,
+        address: [
+            local_client::SAMPLER_ADDRESS_CLAMP_TO_EDGE,
+            local_client::SAMPLER_ADDRESS_CLAMP_TO_EDGE,
+            local_client::SAMPLER_ADDRESS_CLAMP_TO_EDGE,
+        ],
+        lod: [0.0, 32.0],
+        anisotropy: 1,
+    };
+    assert_eq!(
+        local_client::sampler_create(&local_client::Sampler {
+            address: [
+                local_client::SAMPLER_ADDRESS_CLAMP_TO_BORDER,
+                base.address[1],
+                base.address[2],
+            ],
+            ..base
+        }),
+        Err(-1)
+    );
+    assert_eq!(
+        local_client::sampler_create(&local_client::Sampler {
+            lod: [0.0, f32::NAN],
+            ..base
+        }),
+        Err(-1)
+    );
+    assert_eq!(
+        local_client::sampler_create(&local_client::Sampler {
+            min_linear: false,
+            anisotropy: 2,
+            ..base
+        }),
+        Err(-1)
+    );
+    assert_eq!(local_client::sampler_create_bordered(&base, 0), Err(-1));
+    assert_eq!(
+        local_client::sampler_create_bordered(
+            &local_client::Sampler {
+                address: [
+                    local_client::SAMPLER_ADDRESS_CLAMP_TO_BORDER,
+                    base.address[1],
+                    base.address[2],
+                ],
+                ..base
+            },
+            3
+        ),
+        Err(-1)
+    );
+}

@@ -141,6 +141,7 @@ def package(output_directory, binary_directory, *, system=None, target_triple=No
         for filename in ['install_slang.py', 'install_dxc.py']:
             shutil.copyfile(PROJECT / 'tools' / filename, root / 'tools' / filename)
         shutil.copytree(PROJECT / 'engines', root / 'engines', ignore=shutil.ignore_patterns('__pycache__', 'target'))
+        shutil.copytree(PROJECT / 'compat', root / 'compat', ignore=shutil.ignore_patterns('__pycache__', 'target'))
         shutil.copytree(PROJECT / 'examples', root / 'examples', ignore=shutil.ignore_patterns('__pycache__', 'target'))
         shutil.copytree(PROJECT / 'tools/audio-decoder', root / 'tools/audio-decoder', ignore=shutil.ignore_patterns('__pycache__', 'target'))
         shutil.copytree(PROJECT / 'ports', root / 'ports', ignore=shutil.ignore_patterns('.git', '__pycache__', 'target'))

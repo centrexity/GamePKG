@@ -205,7 +205,7 @@ enum Command {
     },
     /// Inspect a signed update without installing it.
     CheckUpdates { id: String },
-    /// List installed packages.
+    /// List installed packages from signed manifests without rescanning source.
     List,
     /// Install a local file or download an HTTPS or Tor onion URL.
     Install {
@@ -757,7 +757,7 @@ fn main() -> Result<()> {
         }
         Command::List => {
             let root = gamepkg::registry::default_root()?;
-            let report = gamepkg::registry::inspect_library(&root)?;
+            let report = gamepkg::registry::inspect_library_for_list(&root)?;
             for (name, error) in report.rejected {
                 println!("{name} — Unavailable: {error}");
             }

@@ -10,22 +10,23 @@ runs:
       - name: Prepare target directory
         shell: bash
         run: mkdir -p target
-      - name: Install preview codecs
-        shell: bash
-        run: bash tools/ci_ubuntu_apt.sh update && bash tools/ci_ubuntu_apt.sh install -y ffmpeg g++ libsdl2-dev openssl
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: gamepkg-ci-setup-${{ inputs.profile }}
       - name: Install Rust tools
         shell: bash
         run: rustup update stable && rustup default stable && rustup component add rustfmt clippy
-      - name: Install audio development headers
+      - name: Install common build prerequisites
         shell: bash
-        run: bash tools/ci_ubuntu_apt.sh update && bash tools/ci_ubuntu_apt.sh install -y libasound2-dev libudev-dev libsdl2-mixer-dev libmpg123-dev libmpfr-dev
+        run: bash tools/ci_ubuntu_apt.sh update && bash tools/ci_ubuntu_apt.sh install -y ffmpeg g++ libsdl2-dev openssl libasound2-dev libudev-dev libsdl2-mixer-dev libmpg123-dev libmpfr-dev
       - name: Install virtual display tools
         shell: bash
         run: |
           # Selenium's recommended Chromium package is a Snap transition on
           # Ubuntu. Use the runner image's matching Chrome/ChromeDriver pair
           # instead of making GUI tests depend on a Snap Store transaction.
-          bash tools/ci_ubuntu_apt.sh install -y --no-install-recommends xvfb xdotool metacity x11-utils imagemagick optipng tesseract-ocr python3-pil python3-xlib python3-selenium python3-websocket zenity libxtst-dev libsdl2-dev libsdl2-ttf-dev libsdl2-image-dev pkg-config libxkbcommon-x11-0 libgl1-mesa-dri libvulkan1 libvulkan-dev mesa-vulkan-drivers
+          bash tools/ci_ubuntu_apt.sh install -y --no-install-recommends xvfb xdotool metacity x11-utils imagemagick optipng tesseract-ocr python3-pil python3-xlib python3-selenium python3-websocket zenity libxtst-dev libsdl2-ttf-dev libsdl2-image-dev pkg-config libxkbcommon-x11-0 libgl1-mesa-dri libvulkan1 libvulkan-dev mesa-vulkan-drivers
           chrome_browser=$(readlink -f "$(command -v google-chrome)")
           chrome_driver="${CHROMEWEBDRIVER:-/nonexistent}/chromedriver"
           if [[ ! -x "$chrome_driver" ]]; then chrome_driver=$(command -v chromedriver); fi
@@ -39,7 +40,7 @@ runs:
       - name: Install native launch sandbox for unit tests
         if: ${{ inputs.profile == 'unit' }}
         shell: bash
-        run: bash tools/ci_ubuntu_apt.sh update && bash tools/ci_ubuntu_apt.sh install -y --no-install-recommends bubblewrap
+        run: bash tools/ci_ubuntu_apt.sh install -y --no-install-recommends bubblewrap
       - name: Build decoder and converter companions
         if: ${{ inputs.profile != 'gates' && inputs.profile != 'unit' }}
         shell: bash
@@ -53,7 +54,7 @@ runs:
       - name: Install isolated build prerequisites
         if: ${{ inputs.profile != 'gates' && inputs.profile != 'unit' }}
         shell: bash
-        run: bash tools/ci_ubuntu_apt.sh update && bash tools/ci_ubuntu_apt.sh install -y bubblewrap clang-18 lld-18 wasi-libc libclang-rt-18-dev-wasm32 && rustup target add wasm32-unknown-unknown
+        run: bash tools/ci_ubuntu_apt.sh install -y bubblewrap clang-18 lld-18 wasi-libc libclang-rt-18-dev-wasm32 && rustup target add wasm32-unknown-unknown
       - name: Install pinned shader compiler
         if: ${{ inputs.profile != 'gates' && inputs.profile != 'unit' }}
         shell: bash

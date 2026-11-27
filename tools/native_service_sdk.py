@@ -10,7 +10,7 @@ import tarfile
 import tempfile
 
 PROJECT = Path(__file__).resolve().parents[1]
-ROOTS = ['src', 'engines', 'include', 'vendor', 'web-player', 'wit', 'html/library']
+ROOTS = ['src', 'compat', 'engines', 'include', 'vendor', 'web-player', 'wit', 'html/library']
 FILES = [
     'Cargo.toml', 'Cargo.lock', 'build.rs', 'LICENSE', 'NOTICE',
     'html/assets/gamepkg-icon.png',

@@ -4,7 +4,8 @@ use syn::visit::Visit;
 
 /// Signed into native build receipts. A host with a different scanner policy
 /// refuses older receipts and requires a fresh admitted build.
-pub const SCAN_POLICY: &str = "gamepkg-source-scan-v1";
+pub const SCAN_POLICY: &str = "gamepkg-source-scan-v2";
+pub(crate) const MAX_EXPRESSION_COMPLEXITY: usize = 2048;
 
 #[cfg(test)]
 pub(crate) mod scan_probe {
@@ -80,7 +81,7 @@ fn syntax_budget(text: &str) -> Result<()> {
             declaration = true;
         }
         scopes.last_mut().unwrap().current += 1;
-        if scopes.iter().map(|scope| scope.current).sum::<usize>() > 1024 {
+        if scopes.iter().map(|scope| scope.current).sum::<usize>() > MAX_EXPRESSION_COMPLEXITY {
             bail!("Rust source exceeds expression complexity budget");
         }
         let close = match token.kind {
@@ -113,7 +114,7 @@ fn syntax_budget(text: &str) -> Result<()> {
             }
             let parent = scopes.last_mut().unwrap();
             parent.current += child.current.max(child.maximum);
-            if scopes.iter().map(|scope| scope.current).sum::<usize>() > 1024 {
+            if scopes.iter().map(|scope| scope.current).sum::<usize>() > MAX_EXPRESSION_COMPLEXITY {
                 bail!("Rust source exceeds expression complexity budget");
             }
             if child.declaration {
@@ -842,6 +843,15 @@ mod syntax_budget_tests {
         ))
         .is_err());
         assert!(syntax_budget(&format!("fn x() {{ {}0; }}", "1 + ".repeat(2000))).is_err());
+    }
+    #[test]
+    fn expression_complexity_boundary_is_exact() {
+        syntax_budget(&format!("{}1;", "1 + ".repeat(1023))).unwrap();
+        let error = syntax_budget(&format!("{}1;", "1 + ".repeat(1024))).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "Rust source exceeds expression complexity budget"
+        );
     }
     #[test]
     fn punctuation_in_strings_and_comments_is_not_syntax_nesting() {

@@ -12,6 +12,7 @@ concurrency:
 jobs:
   test-core:
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_PROFILE_DEV_DEBUG: "0"
@@ -22,6 +23,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: gamepkg-ci-core
       - name: Validate native gameplay capture qualification
         run: |
           python3 tests/takedawn_path_gate.py
@@ -207,6 +212,7 @@ jobs:
         run: python3 tests/display_preferences_cli.py
   test-gates:
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_PROFILE_DEV_DEBUG: "0"
@@ -372,6 +378,7 @@ jobs:
           GAMEPKG_CLANG=clang GAMEPKG_X87_STACK_FIXTURE_SOURCE="$RUNNER_TEMP/gamepkg-x87-stack-fixture.c" GAMEPKG_X87_STACK_LINK_ONLY=1 bash tools/check_takedawn_x87_stack_targets.sh
   test-unit:
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_PROFILE_DEV_DEBUG: "0"
@@ -560,6 +567,7 @@ jobs:
         run: cargo clippy --locked --all-targets --all-features -- -D warnings
   test-integration:
     runs-on: ubuntu-24.04
+    timeout-minutes: 90
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_PROFILE_DEV_DEBUG: "0"
@@ -607,6 +615,8 @@ jobs:
         run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" python3 tests/native_build.py
       - name: Verify signed native indexed Slang builds and stale receipt rejection
         run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" /usr/bin/python3 tests/native_build.py --indexed
+      - name: Verify signed native textured-v2 Slang builds and stale receipt rejection
+        run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" /usr/bin/python3 tests/native_build.py --textured-v2
       - name: Shared signed native SDK assets and persistent saves
         run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" cargo test --locked --all-features --lib native::signed_fixture::signed_native_sdk_assets_saves_and_integrity -- --ignored --exact --nocapture
       - name: Verify legacy C engine packages are blocked before compilation
@@ -694,6 +704,7 @@ jobs:
           if-no-files-found: ignore
   test-gui:
     runs-on: ubuntu-24.04
+    timeout-minutes: 120
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_PROFILE_DEV_DEBUG: "0"
@@ -833,6 +844,7 @@ jobs:
           if-no-files-found: ignore
   test-browser:
     runs-on: ubuntu-24.04
+    timeout-minutes: 120
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_PROFILE_DEV_DEBUG: "0"

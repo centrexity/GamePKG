@@ -1,0 +1,9 @@
+[package]
+name = "gamepkg-gzip-compat"
+version = "0.1.30"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+flate2-upstream = { package = "flate2", version = "1" }

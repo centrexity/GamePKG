@@ -95,6 +95,13 @@ the game engine and its platform bridge inside the audited game code.
 Record the compatibility-layer version and source identity in the build
 receipt. Retain the existing permission, resource, and confinement rules.
 
+Codec and SIMD access stay inside that trusted layer. The GamePKG-owned crates
+under `compat/image`, `compat/zstd`, `compat/deflate`, `compat/gzip`, and
+`compat/zip` wrap reviewed upstream codecs with bounded in-memory APIs; they are
+host dependencies, never guest crates. `src/host_simd.rs` performs static and
+runtime host capability detection through the vendored `fearless_simd` core.
+Neither SIMD levels nor CPU identity become guest imports or package metadata.
+
 Admission allows up to 512 MiB of package source. Verified compiler tools and
 their pinned downloads can be up to 2 GiB per file. The finished game
 executable has a separate 256 MiB limit.

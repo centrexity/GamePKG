@@ -69,6 +69,9 @@
 #define GAMEPKG_PORT_AUDIO_RECORD_READ 138u
 #define GAMEPKG_PORT_AUDIO_RECORD_RELEASE 139u
 #define GAMEPKG_PORT_VIEWPORT_PASS 129u
+/* Operation 135 takes the 36-byte 122 sampler descriptor followed by one LE
+ * u32 border color: 0 transparent black, 1 opaque black, 2 opaque white.
+ * Address mode 3 is ClampToBorder on any axis and requires host support. */
 #define GAMEPKG_PORT_BORDER_SAMPLER_CREATE 135u
 #define GAMEPKG_PORT_CAPTURE_CREATE 140u
 #define GAMEPKG_PORT_CAPTURE_READ 141u

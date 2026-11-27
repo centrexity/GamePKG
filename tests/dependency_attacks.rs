@@ -29,6 +29,8 @@ fn attacks() -> Vec<(String, toml::Value)> {
         "gilrs",
         "egui",
         "byteorder-lite",
+        "fearless_simd",
+        "fearless-simd",
         "gamepkg-input",
         "gamepkg-file",
         "gamepkg-window",

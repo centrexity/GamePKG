@@ -1,0 +1,9 @@
+[package]
+name = "gamepkg-zstd-compat"
+version = "0.1.30"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+zstd-upstream = { package = "zstd", version = "0.14.3", default-features = false }

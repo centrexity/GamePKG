@@ -117,6 +117,12 @@ fn desktop_native_build_and_play_require_the_compatibility_profiles() {
          [[shaders]]\nsource = \"shaders/textured_v1.slang\"\nentry = \"fragmentMain\"\nstage = \"fragment\"\n"
     );
     let textured_manifest = gamepkg::manifest::Manifest::parse(textured.as_bytes()).unwrap();
+    let textured_v2 = format!(
+        "native_services = true\nnative_graphics = \"textured-v2\"\n{old}\n\
+         [[shaders]]\nsource = \"shaders/textured_v2.slang\"\nentry = \"vertexMain\"\nstage = \"vertex\"\n\
+         [[shaders]]\nsource = \"shaders/textured_v2.slang\"\nentry = \"fragmentMain\"\nstage = \"fragment\"\n"
+    );
+    let textured_v2_manifest = gamepkg::manifest::Manifest::parse(textured_v2.as_bytes()).unwrap();
     let has_runtime = cfg!(all(
         feature = "gui",
         any(
@@ -134,6 +140,14 @@ fn desktop_native_build_and_play_require_the_compatibility_profiles() {
     );
     assert_eq!(
         gamepkg::native::play_supported(&textured_manifest),
+        has_runtime
+    );
+    assert_eq!(
+        gamepkg::native::build_supported(&textured_v2_manifest),
+        has_runtime
+    );
+    assert_eq!(
+        gamepkg::native::play_supported(&textured_v2_manifest),
         has_runtime
     );
     #[cfg(windows)]

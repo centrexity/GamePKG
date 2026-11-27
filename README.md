@@ -6,7 +6,7 @@
 
 **Build and playback:** migrated Rust games build for the local CPU through GamePKG’s shared compatibility layer on Linux x64. The game opens its own window. Windows native compatibility is still in development. Optional Wasm builds use Wasmtime with scoped assets, memory limits and deadlines. Vulkan is the default renderer. See [native builds and isolation](docs/NATIVE_RUNTIME.md).
 
-Download the [published 0.1.29 Linux and Windows CLI/desktop apps](https://github.com/centrexity/GamePKG/releases/tag/v0.1.29), including the checksum for your platform. For the Windows app and the separate Wasm setup, see [Windows setup](docs/INSTALL_WINDOWS.md). Portable app bundles include CLI/GUI executables, setup tools, examples, original resolved dependency sources and notices, and integrity hashes. Players need no Python. Maintainers can build both app entry points with the [native Rust release builder](tools/build_release.rs); packaging helpers are maintainer tools. See [installation instructions](docs/INSTALL.md) and the [implementation and verification audit](docs/IMPLEMENTATION_STATUS.md) for profile support and remaining limits.
+Download the [published 0.1.30 Linux and Windows CLI/desktop apps](https://github.com/centrexity/GamePKG/releases/tag/v0.1.30), including the checksum for your platform. For the Windows app and the separate Wasm setup, see [Windows setup](docs/INSTALL_WINDOWS.md). Portable app bundles include CLI/GUI executables, setup tools, examples, original resolved dependency sources and notices, and integrity hashes. Players need no Python. Maintainers can build both app entry points with the [native Rust release builder](tools/build_release.rs); packaging helpers are maintainer tools. See [installation instructions](docs/INSTALL.md) and the [implementation and verification audit](docs/IMPLEMENTATION_STATUS.md) for profile support and remaining limits.
 
 Try the [signed demo catalog](https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demos.gamepkglist) from **Add** → **Import .gamepkglist**. Open Collect Stars, Shape Playground, or PNG Sprite Playground, download it, approve its creator, then choose **Build Wasm** and **Play Wasm**. The original demos need neither a ROM nor a signing key. The catalog also includes Zelda3, which requires a supported USA ROM and is currently gated while its engine migrates. The [portable demo store](https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demos.gamepkgstore) is available for offline import.
 
@@ -760,7 +760,7 @@ When DXIL is selected, Settings also provides a **DXC 1.9.2609 installation fold
 
 Settings explains the fixed no-dependency policy. Legacy crate approval settings are ignored and omitted on save. Dependency-bearing packages must be updated and signed again by their creators.
 
-The desktop library and `gamepkg list` inspect installed files independently. A damaged archive, mismatched filename, or package rejected by current host policy appears as **Unavailable** with its filename and verification error; other verified games remain visible. Rejected files do not supply trusted game metadata or Play controls. Installation and store conflict checks continue to use strict verification and fail when the existing library cannot be verified.
+The desktop library inspects installed files with full verification. A damaged archive, mismatched filename, or package rejected by current host policy appears as **Unavailable** with its filename and verification error; other verified games remain visible. Rejected files do not supply trusted game metadata or Play controls. `gamepkg list` only authenticates each signed manifest so listing stays fast: it skips source admission and recipe validation, does not publish a verified identity, and never supplies Play controls. Damaged archives and filename mismatches still appear as **Unavailable** in the CLI. Installation, store conflict checks, builds and launches continue to use strict verification and fail when the existing library cannot be verified.
 
 If the library folder becomes unreadable, refreshing the desktop library clears stale rows and shows the folder error. `tests/library_gui.py` checks the actual rendered screen for a verified game beside a rejected archive, then verifies that no old rows remain after the folder becomes unreadable. The virtual-desktop test uses Tesseract to read the displayed labels.
 
@@ -1061,7 +1061,7 @@ rejected before they can compile a package.
 
 Rust inspection uses a non-recursive lexer before constructing token groups or
 an AST. It limits syntax nesting to 64 groups, source tokens to 131,072 per file,
-and weighted expression complexity to 1,024. Excessive operator and nesting
+and weighted expression complexity to 2,048. Excessive operator and nesting
 inputs fail cleanly instead of overflowing the parser's stack. Literal/comment
 contents do not count as nesting, and the oversized-artifact fixture still
 reaches the isolated compiler. `tests/parser_limits.py` covers actual CLI

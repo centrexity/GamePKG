@@ -3,7 +3,7 @@ use crate::manifest::{Manifest, NativeGraphics};
 use crate::port_host::owner::VerifiedAssets;
 use crate::port_host::{
     admission::CheckedSources,
-    graphics::{textured_v1_recipe, PipelineRecipe, VerifiedPipelines},
+    graphics::{textured_v1_recipe, textured_v2_recipe, PipelineRecipe, VerifiedPipelines},
     preparation::{self, Artifact, Bootstrap, ExecutableReceipt, LocalLayout, Plan, Target},
     process::{NativeLaunch, Process},
 };
@@ -95,6 +95,7 @@ fn prepare_graphics(
             uniform_policy: Default::default(),
         },
         Some(NativeGraphics::TexturedV1) => textured_v1_recipe(),
+        Some(NativeGraphics::TexturedV2) => textured_v2_recipe(),
         None => return Ok(None),
     };
     VerifiedPipelines::prepare(root, sources, package, settings, vec![recipe], 1).map(Some)
@@ -670,6 +671,10 @@ mod linux_tests {
             (
                 "stale scanner policy",
                 Box::new(|r| r.source.scanner_policy = "v0".into()),
+            ),
+            (
+                "previous scanner policy",
+                Box::new(|r| r.source.scanner_policy = "gamepkg-source-scan-v1".into()),
             ),
             ("stale receipt format", Box::new(|r| r.format = 1)),
             ("stale SDK", Box::new(|r| r.game.sdk = "stale".into())),

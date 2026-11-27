@@ -1288,6 +1288,16 @@ pub fn target_clear_stencil(
     }
     call(120, &request, &mut []).map(|_| ())
 }
+/// Bounded address modes shared by sampler descriptors 122 and 135.
+pub const SAMPLER_ADDRESS_CLAMP_TO_EDGE: u32 = 0;
+pub const SAMPLER_ADDRESS_REPEAT: u32 = 1;
+pub const SAMPLER_ADDRESS_MIRROR_REPEAT: u32 = 2;
+pub const SAMPLER_ADDRESS_CLAMP_TO_BORDER: u32 = 3;
+/// Bounded border colors for descriptor 135.
+pub const SAMPLER_BORDER_TRANSPARENT_BLACK: u32 = 0;
+pub const SAMPLER_BORDER_OPAQUE_BLACK: u32 = 1;
+pub const SAMPLER_BORDER_OPAQUE_WHITE: u32 = 2;
+#[derive(Clone, Copy, Debug)]
 pub struct Sampler {
     pub min_linear: bool,
     pub mag_linear: bool,
@@ -1296,20 +1306,66 @@ pub struct Sampler {
     pub lod: [f32; 2],
     pub anisotropy: u32,
 }
+impl Sampler {
+    fn validate(&self, bordered: bool) -> std::result::Result<(), i32> {
+        let maximum_address = if bordered {
+            SAMPLER_ADDRESS_CLAMP_TO_BORDER
+        } else {
+            SAMPLER_ADDRESS_MIRROR_REPEAT
+        };
+        if self.address.iter().any(|value| *value > maximum_address)
+            || (bordered && !self.address.contains(&SAMPLER_ADDRESS_CLAMP_TO_BORDER))
+            || !self.lod[0].is_finite()
+            || !self.lod[1].is_finite()
+            || self.lod[0] < 0.0
+            || self.lod[1] < self.lod[0]
+            || self.lod[1] > 32.0
+            || !(1..=16).contains(&self.anisotropy)
+            || (self.anisotropy > 1 && !(self.min_linear && self.mag_linear && self.mip_linear))
+        {
+            return Err(-1);
+        }
+        Ok(())
+    }
+    fn encode(&self, border: Option<u32>) -> Vec<u8> {
+        let mut request = [
+            u32::from(self.min_linear),
+            u32::from(self.mag_linear),
+            u32::from(self.mip_linear),
+        ]
+        .into_iter()
+        .chain(self.address)
+        .chain(self.lod.map(f32::to_bits))
+        .chain([self.anisotropy])
+        .flat_map(u32::to_le_bytes)
+        .collect::<Vec<u8>>();
+        if let Some(color) = border {
+            request.extend(color.to_le_bytes());
+        }
+        request
+    }
+}
+/// Operation 122: a compact, bounded filter/address/LOD/anisotropy descriptor.
 pub fn sampler_create(s: &Sampler) -> std::result::Result<u64, i32> {
-    let request = [
-        u32::from(s.min_linear),
-        u32::from(s.mag_linear),
-        u32::from(s.mip_linear),
-    ]
-    .into_iter()
-    .chain(s.address)
-    .chain(s.lod.map(f32::to_bits))
-    .chain([s.anisotropy])
-    .flat_map(u32::to_le_bytes)
-    .collect::<Vec<_>>();
+    s.validate(false)?;
+    let request = s.encode(None);
     let mut reply = [0; 8];
     if call(122, &request, &mut reply)? != 8 {
+        return Err(-3);
+    }
+    Ok(u64::from_le_bytes(reply))
+}
+/// Operation 135: the same bounded descriptor with one of three border colors.
+/// A bordered address mode is required; the host still rejects the request when
+/// the Vulkan device lacks ClampToBorder support.
+pub fn sampler_create_bordered(s: &Sampler, border: u32) -> std::result::Result<u64, i32> {
+    if border > SAMPLER_BORDER_OPAQUE_WHITE {
+        return Err(-1);
+    }
+    s.validate(true)?;
+    let request = s.encode(Some(border));
+    let mut reply = [0; 8];
+    if call(135, &request, &mut reply)? != 8 {
         return Err(-3);
     }
     Ok(u64::from_le_bytes(reply))

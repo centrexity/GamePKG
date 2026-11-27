@@ -224,9 +224,7 @@ fn compressed_effect_wav(bytes: &[u8]) -> Result<Option<Vec<u8>>> {
     {
         return Ok(None);
     }
-    let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::best());
-    encoder.write_all(bytes)?;
-    let packed = encoder.finish()?;
+    let packed = flate2::zlib_compress(bytes, flate2::Compression::best())?;
     Ok((packed.len() + 64 < bytes.len()).then_some(packed))
 }
 

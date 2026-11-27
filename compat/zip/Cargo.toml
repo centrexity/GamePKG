@@ -1,0 +1,10 @@
+[package]
+name = "gamepkg-zip-compat"
+version = "0.1.30"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+zip-upstream = { package = "zip", version = "=9.0.5", default-features = false, features = ["zstd", "deflate-flate2"] }
+flate2-upstream = { package = "flate2", version = "1", default-features = false, features = ["rust_backend"] }

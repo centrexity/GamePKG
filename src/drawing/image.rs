@@ -82,24 +82,12 @@ impl Image {
     }
     /// Decode only bounded PNG data, without reading paths or other image formats.
     pub fn from_png(bytes: &[u8]) -> Option<Self> {
-        if bytes.len() > MAX_PNG_BYTES {
-            return None;
-        }
-        let mut reader = ::image::ImageReader::with_format(
-            std::io::Cursor::new(bytes),
-            ::image::ImageFormat::Png,
-        );
-        let mut limits = ::image::Limits::default();
-        limits.max_image_width = Some(MAX_DIMENSION);
-        limits.max_image_height = Some(MAX_DIMENSION);
-        limits.max_alloc = Some(8 * 1024 * 1024);
-        reader.limits(limits);
-        let decoded = reader.decode().ok()?.into_rgba8();
+        // The GamePKG-owned image layer enforces the same size, dimension,
+        // allocation and exact-RGBA policy before returning a host-owned buffer.
+        let decoded = ::image::decode_png(bytes).ok()?;
         let (width, height) = decoded.dimensions();
         let length = Self::byte_length(width, height)?;
-        // The decoder already owns an immutable snapshot. Keep its RGBA buffer
-        // instead of cloning it during conversion and again in `Self::new`.
-        // Discard any spare capacity so retained memory matches cache accounting.
+        // Discard spare capacity so retained memory matches cache accounting.
         let pixels = decoded.into_raw().into_boxed_slice().into_vec();
         if pixels.len() != length {
             return None;

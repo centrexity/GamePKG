@@ -1,0 +1,9 @@
+[package]
+name = "gamepkg-image-compat"
+version = "0.1.30"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+image-upstream = { package = "image", version = "0.25", default-features = false, features = ["png"] }

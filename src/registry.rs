@@ -1,7 +1,7 @@
 use crate::{
     archive::Package,
     manifest::Manifest,
-    verify::{verify_embedded, verify_embedded_checked},
+    verify::{verify_embedded, verify_embedded_checked, verify_signed_identity},
 };
 use anyhow::{bail, Context, Result};
 use std::{
@@ -409,6 +409,20 @@ pub struct LibraryInspection {
 }
 /// Inspect each file independently for display; rejected files never supply game metadata.
 pub fn inspect_library(root: &Path) -> Result<LibraryInspection> {
+    inspect_library_with_policy(root, true)
+}
+
+/// List installed packages from their authenticated manifest only.
+///
+/// The CLI list command deliberately skips build-time source admission and
+/// recipe validation. The package signature and structural checks still run,
+/// but no source is scanned or compiled and no verified identity is published
+/// to callers. Launch and build paths keep their strict verification.
+pub fn inspect_library_for_list(root: &Path) -> Result<LibraryInspection> {
+    inspect_library_with_policy(root, false)
+}
+
+fn inspect_library_with_policy(root: &Path, scan_source: bool) -> Result<LibraryInspection> {
     let mut report = LibraryInspection {
         games: Vec::new(),
         verified: BTreeMap::new(),
@@ -422,24 +436,31 @@ pub fn inspect_library(root: &Path) -> Result<LibraryInspection> {
         if entry.path().extension().is_none_or(|x| x != "gamepkg") {
             continue;
         }
-        let result = (|| -> Result<(Manifest, VerifiedIdentity)> {
+        let result = (|| -> Result<(Manifest, Option<VerifiedIdentity>)> {
             if entry.file_type()?.is_symlink() {
                 bail!("installed package is a symlink");
             }
             let mut package = Package::open(&entry.path())?;
-            let checked = verify_embedded_checked(&mut package)?;
-            if entry.file_name().to_str() != Some(&format!("{}.gamepkg", checked.manifest.id)) {
+            let (manifest, identity) = if scan_source {
+                let checked = verify_embedded_checked(&mut package)?;
+                let identity = VerifiedIdentity {
+                    tree_identity: hex::encode(checked.tree_identity),
+                    archive_digest: package.archive_digest()?,
+                };
+                (checked.manifest, Some(identity))
+            } else {
+                (verify_signed_identity(&mut package)?, None)
+            };
+            if entry.file_name().to_str() != Some(&format!("{}.gamepkg", manifest.id)) {
                 bail!("installed package ID mismatch");
             }
-            let identity = VerifiedIdentity {
-                tree_identity: hex::encode(checked.tree_identity),
-                archive_digest: package.archive_digest()?,
-            };
-            Ok((checked.manifest, identity))
+            Ok((manifest, identity))
         })();
         match result {
             Ok((m, identity)) => {
-                report.verified.insert(m.id.clone(), identity);
+                if let Some(identity) = identity {
+                    report.verified.insert(m.id.clone(), identity);
+                }
                 report.games.push(m);
             }
             Err(error) => report.rejected.push((

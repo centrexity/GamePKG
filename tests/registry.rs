@@ -406,3 +406,45 @@ fn policy_rejected_legacy_packages_can_only_upgrade_to_verified_same_creator_sou
     assert!(registry::install(&root, &next, false).is_err());
     assert_eq!(fs::read(&installed).unwrap(), tampered);
 }
+
+#[test]
+fn cli_list_uses_signed_manifest_without_source_admission() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("library");
+    let old = package(temp.path(), "legacy", "0.1.0", &[5; 32]);
+    legacy_archive(
+        &old,
+        b"pub fn game_tick(input: u32, state: u64) -> u64 { assert!(input < 256); state }",
+        &[5; 32],
+        true,
+    );
+    fs::create_dir_all(&root).unwrap();
+    fs::copy(&old, root.join("com.gamepkg.minimal.gamepkg")).unwrap();
+
+    // The strict library view still quarantines source rejected by admission.
+    let strict = registry::inspect_library(&root).unwrap();
+    assert!(strict.games.is_empty());
+    assert_eq!(strict.rejected.len(), 1);
+
+    // Listing only authenticates the signed manifest; it does not rescan source
+    // or publish a verified identity that could be reused for asset access.
+    let listed = registry::inspect_library_for_list(&root).unwrap();
+    assert!(listed.rejected.is_empty());
+    assert_eq!(listed.games.len(), 1);
+    assert_eq!(listed.games[0].id, "com.gamepkg.minimal");
+    assert!(listed.verified.is_empty());
+
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_gamepkg"))
+        .env("GAMEPKG_HOME", &root)
+        .args(["list"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.contains("com.gamepkg.minimal 0.1.0"));
+    assert!(!text.contains(".gamepkg — Unavailable"));
+}

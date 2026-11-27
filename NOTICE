@@ -426,3 +426,16 @@ Original sources, exact hashes, license, adaptation and source/relink notes:
 engines/takedawn/native-gen/runtime/transcendentals/. Pinned C++ numerical
 reference files there are maintainer-test inputs only. This is a host runtime
 component, not permission for guest crates. No game assets are included.
+
+Host SIMD capability detection:
+fearless_simd 1.3.0, copyright the fearless_simd contributors,
+Apache-2.0 OR MIT. The pinned source and both license texts are in
+vendor/fearless_simd. GamePKG uses it only inside trusted host code and never
+defines it as a guest crate permission or exposes CPU identity to games.
+
+Bounded host codec compatibility layers:
+The GamePKG-owned crates under compat/image, compat/zstd, compat/deflate,
+compat/gzip and compat/zip wrap reviewed upstream codec implementations with
+explicit input and output caps. They are host dependencies only. Games cannot
+declare, import or link them; guests continue to use host-owned image, asset
+and archive services. Upstream licenses are retained in third-party notices.
