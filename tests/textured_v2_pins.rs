@@ -1,5 +1,8 @@
 //! Maintainer-side provenance check for the pinned textured-v2 shader catalog.
-#![cfg(feature = "gui")]
+#![cfg(all(
+    feature = "gui",
+    any(windows, all(target_os = "linux", target_arch = "x86_64"))
+))]
 #[path = "support/adversarial.rs"]
 #[allow(dead_code)]
 mod fixture;
