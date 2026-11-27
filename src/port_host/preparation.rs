@@ -290,6 +290,35 @@ impl Plan {
         .collect()
     }
 }
+/// Bumped when a required signed receipt field changes. Older receipts omit
+/// `source` and are rejected before any native binary is allowed to run.
+pub const RECEIPT_FORMAT: u32 = 2;
+
+/// Signed attestation that build admission scanned and accepted the exact
+/// installed package bytes whose native executable is being launched.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct SourceAttestation {
+    pub scanner_policy: String,
+    pub archive_digest: String,
+    pub tree_identity: String,
+    pub source_kit: String,
+}
+impl SourceAttestation {
+    pub(crate) fn is_well_formed(&self) -> bool {
+        let sha256 = |value: &str| {
+            value.len() == 64
+                && value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+        };
+        self.scanner_policy == crate::source::SCAN_POLICY
+            && sha256(&self.archive_digest)
+            && sha256(&self.tree_identity)
+            && sha256(&self.source_kit)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ExecutableReceipt {
@@ -302,6 +331,7 @@ pub struct ExecutableReceipt {
     pub runtime: String,
     pub shader_preparation: Vec<String>,
     pub binary: String,
+    pub source: SourceAttestation,
     #[serde(default)]
     pub bootstrap: Bootstrap,
     #[serde(default)]
@@ -354,7 +384,8 @@ impl Artifact {
     }
     pub fn executable(&self) -> Result<PathBuf> {
         ensure!(
-            self.receipt.format == 1
+            self.receipt.format == RECEIPT_FORMAT
+                && self.receipt.source.is_well_formed()
                 && self.receipt.game.sdk == super::build_identity()
                 && self.receipt.game.policy == crate::build_policy::REVISION,
             "stale service SDK/admission receipt"
@@ -1200,7 +1231,7 @@ fn finish(
         crate::files::read_regular(&directory.path().join(filename), 256 * 1024 * 1024, false)?;
     plan.target.validate(&binary)?;
     let receipt = ExecutableReceipt {
-        format: 1,
+        format: RECEIPT_FORMAT,
         game: audited.receipt().clone(),
         plan: plan.clone(),
         cpu: if plan.target.native() && plan.optimize {
@@ -1217,6 +1248,12 @@ fn finish(
         runtime: identity,
         shader_preparation,
         binary: crate::verify::digest(&binary),
+        source: SourceAttestation {
+            scanner_policy: crate::source::SCAN_POLICY.into(),
+            archive_digest: sources.archive_digest().into(),
+            tree_identity: sources.identity().into(),
+            source_kit: sources.identity().into(),
+        },
         bootstrap,
         raw_objects,
         object_normalization,

@@ -65,8 +65,14 @@ def main():
             contents = binary.read_bytes()
             assert contents.startswith(b"\x7fELF")
             receipt = json.loads(binary.with_suffix(".receipt").read_bytes()[64:])
+            assert receipt["format"] == 2
             assert receipt["bootstrap"] == "InProcess"
             assert receipt["binary"] == hashlib.sha256(contents).hexdigest()
+            attestation = receipt["source"]
+            assert attestation["scanner_policy"] == "gamepkg-source-scan-v1"
+            assert attestation["archive_digest"] == hashlib.sha256(package.read_bytes()).hexdigest()
+            assert attestation["tree_identity"] == receipt["game"]["source_kit"]
+            assert attestation["source_kit"] == receipt["game"]["source_kit"]
             assert len(receipt["game"]["shaders"]) == len(
                 receipt["shader_preparation"]
             ) == int(args.indexed or args.textured)

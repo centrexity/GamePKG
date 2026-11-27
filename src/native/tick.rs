@@ -113,15 +113,23 @@ type PreparedSources = (
     Vec<u8>,
 );
 
-fn source_snapshot(root: &Path, id: &str) -> Result<SourceSnapshot> {
+fn source_snapshot_with_policy(root: &Path, id: &str, scan_source: bool) -> Result<SourceSnapshot> {
     let (bytes, digest) = crate::files::archive_snapshot(&root.join(format!("{id}.gamepkg")))?;
     let mut package = crate::archive::Package::open_snapshot(bytes, digest)?;
-    let sources = CheckedSources::verify(&mut package)?;
+    let sources = if scan_source {
+        CheckedSources::verify(&mut package)?
+    } else {
+        CheckedSources::verify_authenticated(&mut package)?
+    };
     ensure!(
         sources.manifest().id == id,
         "installed native package ID changed"
     );
     Ok((sources, package, None))
+}
+
+fn source_snapshot(root: &Path, id: &str) -> Result<SourceSnapshot> {
+    source_snapshot_with_policy(root, id, true)
 }
 
 pub(super) fn build(root: &Path, id: &str) -> Result<()> {
@@ -165,6 +173,27 @@ fn write(path: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
+fn receipt_policy_matches(
+    receipt: &ExecutableReceipt,
+    manifest: &Manifest,
+    identity: &VerifiedIdentity,
+    shader_preparation: &[String],
+) -> Result<bool> {
+    Ok(receipt.format == preparation::RECEIPT_FORMAT
+        && receipt.source.is_well_formed()
+        && receipt.source.scanner_policy == crate::source::SCAN_POLICY
+        && receipt.source.archive_digest == identity.archive_digest
+        && receipt.source.tree_identity == identity.tree_identity
+        && receipt.source.source_kit == identity.tree_identity
+        && receipt.game.source_kit == identity.tree_identity
+        && receipt.game.sdk == crate::port_host::build_identity()
+        && receipt.game.policy == crate::build_policy::REVISION
+        && receipt.plan == plan(manifest)?
+        && receipt.bootstrap == Bootstrap::InProcess
+        && receipt.game.shaders.len() == shader_preparation.len()
+        && receipt.shader_preparation.as_slice() == shader_preparation)
+}
+
 fn verified_executable(
     root: &Path,
     manifest: &Manifest,
@@ -180,7 +209,13 @@ fn verified_executable(
     key(root, false)?
         .verifying_key()
         .verify(json, &Signature::from_slice(signature)?)?;
-    let receipt: ExecutableReceipt = serde_json::from_slice(json)?;
+    let receipt: ExecutableReceipt = serde_json::from_slice(json).context(
+        "native build receipt lacks a valid source attestation; rebuild from verified source",
+    )?;
+    ensure!(
+        receipt.format == preparation::RECEIPT_FORMAT,
+        "native build receipt is stale; rebuild from verified source"
+    );
     let shader_preparation = if manifest.native_graphics.is_some() {
         let loaded;
         let settings = match settings {
@@ -199,13 +234,7 @@ fn verified_executable(
         Vec::new()
     };
     ensure!(
-        receipt.game.source_kit == identity.tree_identity
-            && receipt.game.sdk == crate::port_host::build_identity()
-            && receipt.game.policy == crate::build_policy::REVISION
-            && receipt.plan == plan(manifest)?
-            && receipt.bootstrap == Bootstrap::InProcess
-            && receipt.game.shaders.len() == shader_preparation.len()
-            && receipt.shader_preparation == shader_preparation,
+        receipt_policy_matches(&receipt, manifest, identity, &shader_preparation)?,
         "native build receipt is stale; rebuild from verified source"
     );
     let bytes = crate::files::read_regular(&path, super::MAX_COMPATIBILITY_BINARY_BYTES, false)?;
@@ -221,7 +250,7 @@ fn prepared(
     id: &str,
     settings: Option<&crate::settings::Settings>,
 ) -> Result<PreparedSources> {
-    let (sources, package, snapshot) = source_snapshot(root, id)?;
+    let (sources, package, snapshot) = source_snapshot_with_policy(root, id, false)?;
     let identity = VerifiedIdentity {
         tree_identity: sources.identity().to_owned(),
         archive_digest: package.archive_digest()?,
@@ -358,6 +387,360 @@ fn selected_roms(root: &Path, manifest: &Manifest, supplied: &[PathBuf]) -> Resu
 #[cfg(all(test, target_os = "linux"))]
 mod linux_tests {
     use super::*;
+    use crate::native::cache_path_for_identity;
+    use crate::port_host::{
+        admission::{ObjectHash, Receipt},
+        preparation::SourceAttestation,
+    };
+
+    type ReceiptMutation = (&'static str, Box<dyn Fn(&mut ExecutableReceipt)>);
+    static DESKTOP_ENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    struct DesktopEnv {
+        previous_display: Option<std::ffi::OsString>,
+        previous_runtime: Option<std::ffi::OsString>,
+        _runtime: tempfile::TempDir,
+        _socket: std::os::unix::net::UnixListener,
+    }
+
+    impl DesktopEnv {
+        fn install() -> Self {
+            let runtime = tempfile::tempdir().unwrap();
+            let display = format!("gamepkg-test-{}", std::process::id());
+            let socket = std::os::unix::net::UnixListener::bind(runtime.path().join(&display))
+                .expect("create launch test Wayland socket");
+            let previous_display = std::env::var_os("WAYLAND_DISPLAY");
+            let previous_runtime = std::env::var_os("XDG_RUNTIME_DIR");
+            std::env::set_var("WAYLAND_DISPLAY", &display);
+            std::env::set_var("XDG_RUNTIME_DIR", runtime.path().as_os_str());
+            Self {
+                previous_display,
+                previous_runtime,
+                _runtime: runtime,
+                _socket: socket,
+            }
+        }
+    }
+
+    impl Drop for DesktopEnv {
+        fn drop(&mut self) {
+            match &self.previous_display {
+                Some(value) => std::env::set_var("WAYLAND_DISPLAY", value),
+                None => std::env::remove_var("WAYLAND_DISPLAY"),
+            }
+            match &self.previous_runtime {
+                Some(value) => std::env::set_var("XDG_RUNTIME_DIR", value),
+                None => std::env::remove_var("XDG_RUNTIME_DIR"),
+            }
+        }
+    }
+
+    fn install_minimal(root: &Path, id: &str, source: &str) {
+        install_recipe(root, id, source, "native_services = true\n");
+    }
+
+    fn install_native_tick(root: &Path, id: &str, source: &str) {
+        install_recipe(root, id, source, "native_tick = true\n");
+    }
+
+    fn install_recipe(root: &Path, id: &str, source: &str, profile: &str) {
+        let recipe = root.join("recipe");
+        fs::create_dir_all(recipe.join("source/src")).unwrap();
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/minimal");
+        for file in [
+            "CREDITS.md",
+            "LICENSE",
+            "NOTICE",
+            "thumbnail.png",
+            "source/Cargo.toml",
+            "source/Cargo.lock",
+        ] {
+            fs::copy(fixture.join(file), recipe.join(file)).unwrap();
+        }
+        let manifest =
+            include_str!("../../examples/minimal/manifest.toml").replace("com.gamepkg.minimal", id);
+        fs::write(recipe.join("manifest.toml"), format!("{profile}{manifest}")).unwrap();
+        fs::write(recipe.join("source/src/lib.rs"), source).unwrap();
+        let package = root.join(format!("{id}.fixture.gamepkg"));
+        crate::pack::pack(&recipe, &package, &[97; 32]).unwrap();
+        crate::registry::install(root, &package, true).unwrap();
+    }
+
+    fn fake_receipt(
+        manifest: &Manifest,
+        identity: &VerifiedIdentity,
+        binary: &[u8],
+    ) -> ExecutableReceipt {
+        ExecutableReceipt {
+            format: preparation::RECEIPT_FORMAT,
+            game: Receipt {
+                policy: crate::build_policy::REVISION.into(),
+                sdk: crate::port_host::build_identity().to_string(),
+                source_kit: identity.tree_identity.clone(),
+                compiler: "ab".repeat(32),
+                auditor: "cd".repeat(32),
+                target: "x86_64-unknown-linux-gnu".into(),
+                shaders: Vec::new(),
+                objects: vec![ObjectHash {
+                    name: "game-0000.o".into(),
+                    sha256: "ef".repeat(32),
+                }],
+            },
+            plan: plan(manifest).unwrap(),
+            cpu: "portable".into(),
+            toolchain: "00".repeat(32),
+            arguments: Vec::new(),
+            runtime: "11".repeat(32),
+            shader_preparation: Vec::new(),
+            binary: crate::verify::digest(binary),
+            source: SourceAttestation {
+                scanner_policy: crate::source::SCAN_POLICY.into(),
+                archive_digest: identity.archive_digest.clone(),
+                tree_identity: identity.tree_identity.clone(),
+                source_kit: identity.tree_identity.clone(),
+            },
+            bootstrap: Bootstrap::InProcess,
+            raw_objects: vec![ObjectHash {
+                name: "game-0000.o".into(),
+                sha256: "ef".repeat(32),
+            }],
+            object_normalization: Default::default(),
+        }
+    }
+
+    fn write_signed_receipt(root: &Path, path: &Path, json: &[u8]) {
+        let signature = key(root, true).unwrap().sign(json);
+        let mut authenticated = signature.to_bytes().to_vec();
+        authenticated.extend(json);
+        write(path, &authenticated).unwrap();
+    }
+
+    fn stage_fake_build(root: &Path, id: &str) -> (Manifest, VerifiedIdentity, PathBuf, Vec<u8>) {
+        stage_fake_build_with(
+            root,
+            id,
+            "pub fn game_main() {}",
+            b"signed native fixture".to_vec(),
+            false,
+        )
+    }
+
+    fn stage_fake_build_with(
+        root: &Path,
+        id: &str,
+        source: &str,
+        binary: Vec<u8>,
+        native_tick: bool,
+    ) -> (Manifest, VerifiedIdentity, PathBuf, Vec<u8>) {
+        if native_tick {
+            install_native_tick(root, id, source);
+        } else {
+            install_minimal(root, id, source);
+        }
+        let (sources, package, _snapshot) = source_snapshot_with_policy(root, id, false).unwrap();
+        let manifest = sources.manifest().clone();
+        let identity = VerifiedIdentity {
+            tree_identity: sources.identity().into(),
+            archive_digest: package.archive_digest().unwrap(),
+        };
+        let receipt = fake_receipt(&manifest, &identity, &binary);
+        let path = cache_path_for_identity(root, &identity, &manifest);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        write(&path, &binary).unwrap();
+        write_signed_receipt(
+            root,
+            &path.with_extension("receipt"),
+            &serde_json::to_vec(&receipt).unwrap(),
+        );
+        crate::source::scan_probe::reset();
+        (manifest, identity, path, binary)
+    }
+
+    #[test]
+    fn launch_preparation_authenticates_without_repeating_source_admission() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = &temp.path().join("library");
+        let id = "com.gamepkg.launch-attestation";
+        let (_manifest, identity, _path, _binary) = stage_fake_build(root, id);
+        let (_sources, _package, _snapshot, receipt, _bytes) = prepared(root, id, None).unwrap();
+        assert_eq!(crate::source::scan_probe::count(), 0);
+        assert_eq!(receipt.source.archive_digest, identity.archive_digest);
+        assert_eq!(receipt.source.tree_identity, identity.tree_identity);
+        assert_eq!(receipt.source.source_kit, identity.tree_identity);
+    }
+
+    #[test]
+    fn correctly_attested_package_launches_without_source_scan() {
+        let _env_lock = DESKTOP_ENV.lock().unwrap();
+        let _desktop = DesktopEnv::install();
+        let temp = tempfile::tempdir().unwrap();
+        let root = &temp.path().join("library");
+        let id = "com.gamepkg.attested-launch";
+        let executable = fs::read("/bin/true").unwrap();
+        stage_fake_build_with(root, id, "pub fn game_main() {}", executable, true);
+        let settings = crate::settings::Settings {
+            memory_ceiling_mib: 512,
+            mute_audio: true,
+            ..Default::default()
+        };
+        crate::source::scan_probe::reset();
+        play_entry(root, id, &[], &settings, Default::default(), false).unwrap();
+        assert_eq!(crate::source::scan_probe::count(), 0);
+    }
+
+    #[test]
+    fn play_entry_never_scans_source_during_launch_preparation() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = &temp.path().join("library");
+        let id = "com.gamepkg.play-no-scan";
+        install_minimal(root, id, "pub fn game_main() {}");
+        let settings = crate::settings::Settings {
+            memory_ceiling_mib: 512,
+            mute_audio: true,
+            ..Default::default()
+        };
+        crate::source::scan_probe::reset();
+        assert!(play_entry(root, id, &[], &settings, Default::default(), true).is_err());
+        assert_eq!(crate::source::scan_probe::count(), 0);
+    }
+
+    #[test]
+    fn build_admission_still_runs_the_authoritative_source_scan() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = &temp.path().join("library");
+        let id = "com.gamepkg.build-admission";
+        install_minimal(root, id, "pub fn game_main() {}");
+        crate::source::scan_probe::reset();
+        let (bytes, digest) =
+            crate::files::archive_snapshot(&root.join(format!("{id}.gamepkg"))).unwrap();
+        let mut package = crate::archive::Package::open_snapshot(bytes, digest).unwrap();
+        CheckedSources::verify(&mut package).unwrap();
+        assert_eq!(crate::source::scan_probe::count(), 1);
+    }
+
+    #[test]
+    fn modified_signed_source_fails_before_native_launch() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = &temp.path().join("library");
+        let id = "com.gamepkg.source-tamper";
+        let (_manifest, _identity, _path, _binary) = stage_fake_build(root, id);
+
+        // A fresh signed package with different admitted source but the same ID
+        // must not inherit the old receipt's attestation.
+        let other = temp.path().join("other-library");
+        install_minimal(&other, id, "pub fn game_main() { let _ = 1; }");
+        let changed = fs::read(other.join(format!("{id}.gamepkg"))).unwrap();
+        write(&root.join(format!("{id}.gamepkg")), &changed).unwrap();
+        assert!(prepared(root, id, None).is_err());
+    }
+
+    #[test]
+    fn receipt_from_another_package_fails_before_native_launch() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = &temp.path().join("library");
+        let source_id = "com.gamepkg.receipt-source";
+        let target_id = "com.gamepkg.receipt-target";
+        let (_, _, source_path, _) = stage_fake_build(root, source_id);
+        let (_, _, target_path, _) = stage_fake_build(root, target_id);
+
+        let receipt = fs::read(source_path.with_extension("receipt")).unwrap();
+        write(&target_path.with_extension("receipt"), &receipt).unwrap();
+        let error = match prepared(root, target_id, None) {
+            Ok(_) => panic!("receipt from another package was accepted"),
+            Err(error) => error.to_string(),
+        };
+        assert!(error.contains("rebuild from verified source"), "{error}");
+    }
+
+    #[test]
+    fn stale_tampered_and_older_receipts_fail_closed() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = &temp.path().join("library");
+        let id = "com.gamepkg.receipt-tamper";
+        let (manifest, identity, path, binary) = stage_fake_build(root, id);
+        let receipt_path = path.with_extension("receipt");
+        let original = serde_json::to_vec(&fake_receipt(&manifest, &identity, &binary)).unwrap();
+        verified_executable(root, &manifest, &identity, None).unwrap();
+
+        let other = VerifiedIdentity {
+            tree_identity: "aa".repeat(32),
+            archive_digest: "bb".repeat(32),
+        };
+        let mutations: Vec<ReceiptMutation> = vec![
+            (
+                "stale scanner policy",
+                Box::new(|r| r.source.scanner_policy = "v0".into()),
+            ),
+            ("stale receipt format", Box::new(|r| r.format = 1)),
+            ("stale SDK", Box::new(|r| r.game.sdk = "stale".into())),
+            (
+                "stale build policy",
+                Box::new(|r| r.game.policy = "stale".into()),
+            ),
+            (
+                "receipt from another package",
+                Box::new(move |r| {
+                    r.source.archive_digest = other.archive_digest.clone();
+                    r.source.tree_identity = other.tree_identity.clone();
+                    r.source.source_kit = other.tree_identity.clone();
+                    r.game.source_kit = other.tree_identity.clone();
+                }),
+            ),
+            (
+                "unknown sampler-free bootstrap",
+                Box::new(|r| r.bootstrap = Bootstrap::HistoricalPipe),
+            ),
+        ];
+        for (label, mutate) in mutations {
+            let mut altered = fake_receipt(&manifest, &identity, &binary);
+            mutate(&mut altered);
+            write_signed_receipt(root, &receipt_path, &serde_json::to_vec(&altered).unwrap());
+            assert!(
+                verified_executable(root, &manifest, &identity, None).is_err(),
+                "{label} was accepted"
+            );
+        }
+
+        // A receipt that predates the attestation field must not deserialize.
+        let mut old: serde_json::Value = serde_json::from_slice(&original).unwrap();
+        old.as_object_mut().unwrap().remove("source");
+        let old_json = serde_json::to_vec(&old).unwrap();
+        write_signed_receipt(root, &receipt_path, &old_json);
+        let error = verified_executable(root, &manifest, &identity, None)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("rebuild from verified source"), "{error}");
+
+        // A modified receipt must fail its signature check.
+        write_signed_receipt(root, &receipt_path, &original);
+        let mut tampered =
+            crate::files::read_regular(&receipt_path, 2 * 1024 * 1024, false).unwrap();
+        tampered[100] ^= 1;
+        write(&receipt_path, &tampered).unwrap();
+        assert!(verified_executable(root, &manifest, &identity, None).is_err());
+
+        // The native executable hash remains a hard binding.
+        write_signed_receipt(root, &receipt_path, &original);
+        write(&path, b"changed executable").unwrap();
+        let error = verified_executable(root, &manifest, &identity, None)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("native executable changed"), "{error}");
+        write(&path, &binary).unwrap();
+    }
+
+    #[test]
+    fn modified_installed_package_fails_before_native_launch() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = &temp.path().join("library");
+        let id = "com.gamepkg.package-tamper";
+        let (_manifest, _identity, _path, _binary) = stage_fake_build(root, id);
+        let package = root.join(format!("{id}.gamepkg"));
+        let mut bytes = fs::read(&package).unwrap();
+        bytes.push(0);
+        write(&package, &bytes).unwrap();
+        assert!(prepared(root, id, None).is_err());
+    }
 
     #[test]
     #[ignore = "builds and runs a signed game via the confined Linux desktop launcher"]
@@ -426,17 +809,24 @@ min_bytes = 1
         let path = temp.path().join("fixture.gamepkg");
         crate::pack::pack(&recipe, &path, &[97; 32]).unwrap();
         let manifest = crate::registry::install(root, &path, true).unwrap();
+        crate::source::scan_probe::reset();
         crate::native::compile(root, &manifest.id).unwrap();
+        assert!(
+            crate::source::scan_probe::count() > 0,
+            "admitted build did not scan guest source"
+        );
         let settings = crate::settings::Settings {
             memory_ceiling_mib: 512,
             mute_audio: true,
             ..Default::default()
         };
         let play = || play_entry(root, &manifest.id, &[], &settings, Default::default(), true);
+        crate::source::scan_probe::reset();
         assert!(play()
             .unwrap_err()
             .to_string()
             .contains("select the required game-data folder"));
+        assert_eq!(crate::source::scan_probe::count(), 0);
         let installation = temp.path().join("installation");
         fs::create_dir_all(installation.join("packages")).unwrap();
         fs::create_dir(installation.join("data")).unwrap();
@@ -444,7 +834,9 @@ min_bytes = 1
         fs::write(installation.join("data/start.cfg"), b"startup").unwrap();
         fs::write(installation.join("private"), b"outside").unwrap();
         crate::game_data::remember(root, &manifest, &installation).unwrap();
+        crate::source::scan_probe::reset();
         play().unwrap();
+        assert_eq!(crate::source::scan_probe::count(), 0);
         assert_eq!(
             fs::read(installation.join("data/start.cfg")).unwrap(),
             b"startup"

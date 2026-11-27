@@ -8,21 +8,40 @@ use std::{
     path::{Path, PathBuf},
 };
 
-/// Obtained only after signature, dependency and complete source admission.
+/// Obtained only after signature, dependency and complete source admission on
+/// the build path. Launch uses `verify_authenticated` and a signed receipt that
+/// attests to the exact admitted package bytes.
 /// Host-generated bindings must be injected AFTER this snapshot is obtained.
 pub struct CheckedSources {
     manifest: crate::manifest::Manifest,
     identity: String,
+    archive_digest: String,
     files: Vec<(String, Vec<u8>)>,
 }
 impl CheckedSources {
     pub fn verify(package: &mut crate::archive::Package) -> Result<Self> {
-        // This single call performs signature, dependency and complete source
-        // admission, then returns the tree identity it already authenticated.
-        let checked = crate::verify::verify_embedded_checked(package)?;
+        Self::verify_with_policy(package, true)
+    }
+
+    /// Authenticated launch snapshot only. The signed native build receipt must
+    /// be validated against this identity before any executable can run.
+    pub(crate) fn verify_authenticated(package: &mut crate::archive::Package) -> Result<Self> {
+        Self::verify_with_policy(package, false)
+    }
+
+    fn verify_with_policy(
+        package: &mut crate::archive::Package,
+        scan_source: bool,
+    ) -> Result<Self> {
+        let checked = if scan_source {
+            crate::verify::verify_embedded_checked(package)?
+        } else {
+            crate::verify::verify_embedded_authenticated_checked(package)?
+        };
         let manifest = checked.manifest;
         crate::build_policy::require(manifest.builtin_engine.as_deref())?;
         let identity = hex::encode(checked.tree_identity);
+        let archive_digest = package.archive_digest()?;
         let mut files = Vec::new();
         for name in package
             .entries
@@ -36,12 +55,16 @@ impl CheckedSources {
         }
         Ok(Self {
             identity,
+            archive_digest,
             files,
             manifest,
         })
     }
     pub fn identity(&self) -> &str {
         &self.identity
+    }
+    pub fn archive_digest(&self) -> &str {
+        &self.archive_digest
     }
     pub fn manifest(&self) -> &crate::manifest::Manifest {
         &self.manifest

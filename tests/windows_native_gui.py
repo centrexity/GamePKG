@@ -196,7 +196,13 @@ def main():
             binary = binaries[0]
             assert executable_architecture(binary, True) == arch
             receipt = json.loads(binary.with_suffix(".receipt").read_bytes()[64:])
+            assert receipt["format"] == 2
             assert receipt["bootstrap"] == "InProcess"
+            attestation = receipt["source"]
+            assert attestation["scanner_policy"] == "gamepkg-source-scan-v1"
+            assert attestation["archive_digest"] == hashlib.sha256(package.read_bytes()).hexdigest()
+            assert attestation["tree_identity"] == receipt["game"]["source_kit"]
+            assert attestation["source_kit"] == receipt["game"]["source_kit"]
             expected_count = int(indexed or textured)
             assert len(receipt["shader_preparation"]) == len(receipt["game"]["shaders"]) == expected_count
             assert receipt["binary"] == hashlib.sha256(binary.read_bytes()).hexdigest()

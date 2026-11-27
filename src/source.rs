@@ -1,6 +1,29 @@
 use crate::archive::Package;
 use anyhow::{bail, Result};
 use syn::visit::Visit;
+
+/// Signed into native build receipts. A host with a different scanner policy
+/// refuses older receipts and requires a fresh admitted build.
+pub const SCAN_POLICY: &str = "gamepkg-source-scan-v1";
+
+#[cfg(test)]
+pub(crate) mod scan_probe {
+    use std::cell::Cell;
+
+    thread_local! {
+        static CALLS: Cell<usize> = const { Cell::new(0) };
+    }
+
+    pub(crate) fn record() {
+        CALLS.with(|calls| calls.set(calls.get() + 1));
+    }
+    pub(crate) fn reset() {
+        CALLS.with(|calls| calls.set(0));
+    }
+    pub(crate) fn count() -> usize {
+        CALLS.with(Cell::get)
+    }
+}
 // Bound syntax complexity with a non-recursive lexer before either token-tree
 // construction or AST parsing. Literals/comments are single tokens, so large
 // asset literals cannot impersonate delimiter/operator nesting.
@@ -473,6 +496,8 @@ impl<'ast> Visit<'ast> for Modules<'_> {
 const MAX_SOURCE_TREE_BYTES: u64 = 512 * 1024 * 1024;
 
 pub fn scan(pkg: &mut Package) -> Result<()> {
+    #[cfg(test)]
+    scan_probe::record();
     let source_bytes = pkg
         .entries
         .iter()

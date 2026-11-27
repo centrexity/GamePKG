@@ -48,8 +48,20 @@ pub fn verify(pkg: &mut Package, trusted: &[u8; 32]) -> Result<Manifest> {
 }
 
 pub(crate) fn verify_checked(pkg: &mut Package, trusted: &[u8; 32]) -> Result<CheckedPackage> {
+    verify_checked_with_policy(pkg, trusted, true)
+}
+
+/// Authenticated package verification. Source admission is enabled only on the
+/// build path; launch relies on the signed receipt's source attestation.
+pub(crate) fn verify_checked_with_policy(
+    pkg: &mut Package,
+    trusted: &[u8; 32],
+    scan_source: bool,
+) -> Result<CheckedPackage> {
     let checked = authenticate_contents(pkg, trusted)?;
-    crate::source::scan(pkg)?;
+    if scan_source {
+        crate::source::scan(pkg)?;
+    }
     if checked.manifest.builtin_engine.as_deref() == Some(crate::cube2::PROFILE) {
         crate::cube2::validate_recipe(pkg)?;
     }
@@ -169,4 +181,12 @@ pub fn verify_embedded(pkg: &mut Package) -> Result<Manifest> {
 pub(crate) fn verify_embedded_checked(pkg: &mut Package) -> Result<CheckedPackage> {
     let m = Manifest::parse(&pkg.read("manifest.toml")?)?;
     verify_checked(pkg, &decode_key(&m.creator_key)?)
+}
+
+/// Authenticate an installed package for launch preparation without repeating
+/// the build-time AST scan. The package is still signature-checked and marked
+/// with its authenticated tree identity.
+pub(crate) fn verify_embedded_authenticated_checked(pkg: &mut Package) -> Result<CheckedPackage> {
+    let m = Manifest::parse(&pkg.read("manifest.toml")?)?;
+    verify_checked_with_policy(pkg, &decode_key(&m.creator_key)?, false)
 }
