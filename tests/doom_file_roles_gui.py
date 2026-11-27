@@ -3,6 +3,9 @@ from pathlib import Path
 import csv,io,json,os,shutil,subprocess,tempfile,time
 from gui_test_support import start_display,game_window,click_text,choose_native_file
 PROJECT=Path(__file__).resolve().parents[1]
+# A sudo-run picker fixture can leave this disposable artifact root-owned.
+# Replace it through the writable target directory before recording this run.
+(PROJECT/'target/native-rom-picker-targets.jsonl').unlink(missing_ok=True)
 with tempfile.TemporaryDirectory(prefix='gamepkg-file-roles-gui-') as temporary:
     root=Path(temporary);library=root/'library';recipe=root/'recipe'
     shutil.copytree(PROJECT/'ports/doom',recipe)
