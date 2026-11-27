@@ -22,6 +22,34 @@ struct Args {
     #[arg(long, conflicts_with = "play", help = "Open the project support page")]
     support: bool,
 }
+/// Prepare the Vulkan instance, adapter and device before eframe starts window
+/// setup. Passing them as `WgpuSetup::Existing` leaves eframe with surface and
+/// pipeline setup instead of another adapter request and device creation.
+fn preinit_vulkan(
+    setup: eframe::egui_wgpu::WgpuSetupCreateNew,
+) -> Option<eframe::egui_wgpu::WgpuSetupExisting> {
+    let instance =
+        pollster::block_on(eframe::egui_wgpu::WgpuSetup::CreateNew(setup.clone()).new_instance());
+    let adapter = pollster::block_on(instance.request_adapter(
+        &eframe::wgpu::RequestAdapterOptions {
+            power_preference: setup.power_preference,
+            compatible_surface: None,
+            force_fallback_adapter: false,
+        },
+    ))?;
+    let (device, queue) = pollster::block_on(adapter.request_device(
+        &(setup.device_descriptor)(&adapter),
+        setup.trace_path.as_deref(),
+    ))
+    .ok()?;
+    Some(eframe::egui_wgpu::WgpuSetupExisting {
+        instance,
+        adapter,
+        device,
+        queue,
+    })
+}
+
 fn main() -> eframe::Result {
     let args = Args::parse();
     if !args.launch.is_empty() && args.play.is_none() {
@@ -80,8 +108,14 @@ fn main() -> eframe::Result {
             return Ok(());
         }
     }
-    let mut wgpu_options = eframe::egui_wgpu::WgpuSetupCreateNew::default();
-    wgpu_options.instance_descriptor.backends = eframe::wgpu::Backends::VULKAN;
+    let mut wgpu_create = eframe::egui_wgpu::WgpuSetupCreateNew::default();
+    wgpu_create.instance_descriptor.backends = eframe::wgpu::Backends::VULKAN;
+    let vulkan_preinit = if settings.renderer == "opengl" {
+        None
+    } else {
+        let create = wgpu_create.clone();
+        Some(std::thread::spawn(move || preinit_vulkan(create)))
+    };
     let title = args
         .play
         .clone()
@@ -104,13 +138,18 @@ fn main() -> eframe::Result {
         .as_ref()
         .map(|session| session.preferences)
         .unwrap_or_default();
+    let wgpu_setup = vulkan_preinit
+        .and_then(|handle| handle.join().ok().flatten())
+        .map(Into::into)
+        .unwrap_or_else(|| wgpu_create.into());
     eframe::run_native(
         &title,
         eframe::NativeOptions {
             vsync: args.play.is_none() || preferences.vsync,
-            // UI dithering perturbs colors before blending. Game pixels use
-            // the encoded RGBA contract shared with SDL and the browser.
-            dithering: args.play.is_none(),
+            // Dithering perturbs colors before blending and adds extra shader
+            // work before the first frame. Game pixels use the encoded RGBA
+            // contract shared with SDL and the browser.
+            dithering: false,
             renderer: if settings.renderer == "opengl" {
                 eframe::Renderer::Glow
             } else {
@@ -122,7 +161,7 @@ fn main() -> eframe::Result {
                 } else {
                     eframe::wgpu::PresentMode::AutoNoVsync
                 },
-                wgpu_setup: wgpu_options.into(),
+                wgpu_setup,
                 ..Default::default()
             },
             viewport: eframe::egui::ViewportBuilder::default()
