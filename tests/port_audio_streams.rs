@@ -40,8 +40,9 @@ impl Backend for Output {
 
 #[test]
 fn audio_streams_create_and_play_through_native_service_pipes() {
-    #[cfg(unix)]
-    let _exclusive = client::TEST_BINDING_LOCK.lock().unwrap();
+    let _exclusive = client::TEST_BINDING_LOCK
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
     let (host_in, client_out) = io::pipe().unwrap();
     let (client_in, host_out) = io::pipe().unwrap();
     let as_file = |pipe: OwnedPipe| File::from(pipe);

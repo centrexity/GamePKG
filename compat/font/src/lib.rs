@@ -165,9 +165,8 @@ pub fn rasterize(codepoint: u32, size: u32) -> Option<Glyph> {
                 continue;
             }
             for scale_y in 0..size {
-                let start = ((((row as u32 * size + scale_y) * width) + column as u32 * size)
-                    as usize)
-                    * 4;
+                let start =
+                    ((((row as u32 * size + scale_y) * width) + column as u32 * size) as usize) * 4;
                 for scale_x in 0..size {
                     let pixel = start + scale_x as usize * 4;
                     rgba[pixel..pixel + 4].copy_from_slice(&[0xff, 0xff, 0xff, 0xff]);

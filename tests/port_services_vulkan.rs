@@ -11,8 +11,9 @@ mod local_client;
 #[test]
 #[ignore = "requires a real Vulkan hardware device; paints offscreen without opening a window"]
 fn shared_desktop_presents_textures_and_verified_shaders_on_hardware_vulkan() {
-    #[cfg(unix)]
-    let _exclusive = local_client::TEST_BINDING_LOCK.lock().unwrap();
+    let _exclusive = local_client::TEST_BINDING_LOCK
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
     let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
         backends: wgpu::Backends::VULKAN,
         ..Default::default()
