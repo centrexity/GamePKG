@@ -1877,8 +1877,8 @@ pub fn thp_display_rgba(
         || height == 0
         || width > 2048
         || height > 2048
-        || width % 2 != 0
-        || height % 2 != 0
+        || !width.is_multiple_of(2)
+        || !height.is_multiple_of(2)
     {
         return Err(-1);
     }

@@ -34,8 +34,8 @@ pub fn yuv420_to_rgba(width: u32, height: u32, y: &[u8], u: &[u8], v: &[u8]) -> 
         || height == 0
         || width > 2048
         || height > 2048
-        || width % 2 != 0
-        || height % 2 != 0
+        || !width.is_multiple_of(2)
+        || !height.is_multiple_of(2)
     {
         return Err(Error::Invalid);
     }
@@ -97,7 +97,7 @@ mod tests {
         let v = vec![128u8; 4];
         let rgba = yuv420_to_rgba(4, 4, &y, &u, &v).unwrap();
         assert_eq!(rgba.len(), 16 * 4);
-        assert!(rgba.chunks_exact(4).all(|p| p == [0, 0, 0, 255]));
+        assert!(rgba.as_chunks::<4>().0.iter().all(|p| *p == [0, 0, 0, 255]));
         assert!(yuv420_to_rgba(3, 4, &y, &u, &v).is_err());
         assert!(yuv420_to_rgba(4, 4, &y[..15], &u, &v).is_err());
         assert!(yuv420_to_rgba(2050, 4, &y, &u, &v).is_err());

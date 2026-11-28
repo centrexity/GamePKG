@@ -428,7 +428,7 @@ impl From<LaunchOptions> for LaunchArgs {
     }
 }
 impl LaunchArgs {
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(any(test, all(feature = "gui", any(windows, target_os = "linux"))))]
     pub(crate) fn service_bytes(self, base: Option<LaunchOptions>) -> Result<[u8; 8]> {
         let args = self.resolved(base)?;
         let absent = u8::MAX;
