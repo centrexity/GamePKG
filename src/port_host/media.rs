@@ -76,4 +76,15 @@ pub trait Backend {
     fn audio(&mut self, samples: &[i16], channels: u32) -> Result<()>;
     /// The selected shared device identity, never a physical XInput slot.
     fn rumble(&mut self, device: u64, low: u16, high: u16, milliseconds: u32) -> Result<()>;
+    /// One exact VI-field pulse. The protocol rejects duplicate/out-of-order
+    /// frame numbers before reaching the backend. The default backend rounds
+    /// only the effect duration; the frame identity itself stays exact.
+    fn rumble_frame(&mut self, device: u64, low: u16, high: u16, period_ns: u64) -> Result<()> {
+        let milliseconds = period_ns
+            .saturating_add(500_000)
+            .checked_div(1_000_000)
+            .unwrap_or(0)
+            .clamp(1, 10_000) as u32;
+        self.rumble(device, low, high, milliseconds)
+    }
 }

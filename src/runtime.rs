@@ -835,7 +835,7 @@ impl Game {
     ) -> Result<Self> {
         let _build_read = crate::build::BuildChange::read(root, id)?;
         let verified = crate::registry::installed_verified(root, id)?;
-        #[cfg_attr(not(test), allow(unused_mut))]
+        #[cfg_attr(not(all(test, any(target_os = "linux", windows))), allow(unused_mut))]
         let mut package = verified.package;
         let _snapshot = verified.snapshot;
         let package_digest = verified.identity.archive_digest;

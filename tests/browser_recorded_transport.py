@@ -119,7 +119,9 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-worklet-mixer-') as temporary:
    const unchanged=await request('snapshot');if(!unchanged.ok||unchanged.activeEffects!==1)throw Error('Stale or foreign request changed playback');
    const busy=await request('unload',{clip:0});if(busy.ok||busy.activeEffects!==1)throw Error('Active clip unload changed playback');
    const analyser=context.createAnalyser();analyser.fftSize=256;const gain=context.createGain();gain.gain.value=0;node.connect(analyser);analyser.connect(gain);gain.connect(context.destination);await context.resume();
-   let heard=false;const signal=new Float32Array(256),deadline=performance.now()+2000;while(performance.now()<deadline){analyser.getFloatTimeDomainData(signal);if(signal.some(v=>v!==0)){heard=true;break;}await new Promise(r=>setTimeout(r,1));}if(!heard)throw Error('No real output from production endpoint');
+   // Hosted headless runners can take several seconds to start audio rendering;
+   // keep the strict non-zero-output assertion but allow a realistic window.
+   let heard=false;const signal=new Float32Array(256),deadline=performance.now()+8000;while(performance.now()<deadline){analyser.getFloatTimeDomainData(signal);if(signal.some(v=>v!==0)){heard=true;break;}await new Promise(r=>setTimeout(r,1));}if(!heard)throw Error('No real output from production endpoint');
    const channel=new MessageChannel(),sender=new RecordedMusicSender(channel.port1);if(!(await request('music-port',{port:channel.port2},[channel.port2])).ok)throw Error('Music port denied');
    const committed=await request('controls',{commands:[[4,1],[6,1]]});if(!committed.ok||committed.musicStatus!=='paused')throw Error('Committed paused Play rejected');
    const decoder=await RecordedDecoderClient.open(await load('decoder.wasm'),await load('tone.mp3'));sender.start(1,decoder);

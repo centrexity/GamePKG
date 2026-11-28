@@ -233,6 +233,825 @@ pub fn version() -> std::result::Result<u32, i32> {
     }
     Ok(u32::from_le_bytes(reply))
 }
+
+// Compile-time SIMD backend for native ports. Game source calls the stable
+// helpers below; only this GamePKG-owned source sees target features, CPUID
+// concepts and architecture intrinsics. There is no service call, runtime
+// dispatch or CPU identity in the generated instruction path. Change the
+// backend here to recompile games against a different reviewed implementation;
+// the SDK source identity pins the exact code in every native receipt.
+#[cfg(target_arch = "aarch64")]
+use core::arch::aarch64 as gamepkg_simd_arch;
+#[cfg(all(target_arch = "x86", target_feature = "sse2"))]
+use core::arch::x86 as gamepkg_simd_arch;
+#[cfg(all(target_arch = "x86_64", target_feature = "sse2"))]
+use core::arch::x86_64 as gamepkg_simd_arch;
+
+#[inline]
+pub fn simd_u32x4_add(a: [u32; 4], b: [u32; 4]) -> [u32; 4] {
+    #[cfg(any(
+        all(
+            any(target_arch = "x86", target_arch = "x86_64"),
+            target_feature = "sse2"
+        ),
+        target_arch = "aarch64"
+    ))]
+    {
+        unsafe { simd_u32x4_add_impl(a, b) }
+    }
+    #[cfg(not(any(
+        all(
+            any(target_arch = "x86", target_arch = "x86_64"),
+            target_feature = "sse2"
+        ),
+        target_arch = "aarch64"
+    )))]
+    {
+        simd_u32x4_add_impl(a, b)
+    }
+}
+#[inline]
+pub fn simd_u32x8_add(a: [u32; 8], b: [u32; 8]) -> [u32; 8] {
+    #[cfg(all(
+        any(target_arch = "x86", target_arch = "x86_64"),
+        target_feature = "avx2"
+    ))]
+    {
+        unsafe { simd_u32x8_add_impl(a, b) }
+    }
+    #[cfg(not(all(
+        any(target_arch = "x86", target_arch = "x86_64"),
+        target_feature = "avx2"
+    )))]
+    {
+        simd_u32x8_add_impl(a, b)
+    }
+}
+#[inline]
+pub fn simd_f32x4_add(a: [f32; 4], b: [f32; 4]) -> [f32; 4] {
+    #[cfg(any(
+        all(
+            any(target_arch = "x86", target_arch = "x86_64"),
+            target_feature = "sse2"
+        ),
+        target_arch = "aarch64"
+    ))]
+    {
+        unsafe { simd_f32x4_add_impl(a, b) }
+    }
+    #[cfg(not(any(
+        all(
+            any(target_arch = "x86", target_arch = "x86_64"),
+            target_feature = "sse2"
+        ),
+        target_arch = "aarch64"
+    )))]
+    {
+        simd_f32x4_add_impl(a, b)
+    }
+}
+#[inline]
+pub fn simd_f32x4_mul(a: [f32; 4], b: [f32; 4]) -> [f32; 4] {
+    #[cfg(any(
+        all(
+            any(target_arch = "x86", target_arch = "x86_64"),
+            target_feature = "sse2"
+        ),
+        target_arch = "aarch64"
+    ))]
+    {
+        unsafe { simd_f32x4_mul_impl(a, b) }
+    }
+    #[cfg(not(any(
+        all(
+            any(target_arch = "x86", target_arch = "x86_64"),
+            target_feature = "sse2"
+        ),
+        target_arch = "aarch64"
+    )))]
+    {
+        simd_f32x4_mul_impl(a, b)
+    }
+}
+#[inline]
+pub fn simd_f32x8_add(a: [f32; 8], b: [f32; 8]) -> [f32; 8] {
+    #[cfg(all(
+        any(target_arch = "x86", target_arch = "x86_64"),
+        target_feature = "avx2"
+    ))]
+    {
+        unsafe { simd_f32x8_add_impl(a, b) }
+    }
+    #[cfg(not(all(
+        any(target_arch = "x86", target_arch = "x86_64"),
+        target_feature = "avx2"
+    )))]
+    {
+        simd_f32x8_add_impl(a, b)
+    }
+}
+#[inline]
+pub fn simd_f32x8_mul(a: [f32; 8], b: [f32; 8]) -> [f32; 8] {
+    #[cfg(all(
+        any(target_arch = "x86", target_arch = "x86_64"),
+        target_feature = "avx2"
+    ))]
+    {
+        unsafe { simd_f32x8_mul_impl(a, b) }
+    }
+    #[cfg(not(all(
+        any(target_arch = "x86", target_arch = "x86_64"),
+        target_feature = "avx2"
+    )))]
+    {
+        simd_f32x8_mul_impl(a, b)
+    }
+}
+/// Fixed-order reductions keep results identical across reviewed backends.
+#[inline]
+pub fn simd_u32x8_wrapping_sum(v: [u32; 8]) -> u32 {
+    v.into_iter().fold(0u32, u32::wrapping_add)
+}
+#[inline]
+pub fn simd_f32x4_sum(v: [f32; 4]) -> f32 {
+    ((v[0] + v[1]) + v[2]) + v[3]
+}
+#[inline]
+pub fn simd_f32x8_sum(v: [f32; 8]) -> f32 {
+    let mut total = v[0];
+    for lane in &v[1..] {
+        total += *lane;
+    }
+    total
+}
+
+#[cfg(all(
+    any(target_arch = "x86", target_arch = "x86_64"),
+    target_feature = "sse2"
+))]
+#[target_feature(enable = "sse2")]
+#[inline]
+unsafe fn simd_u32x4_add_impl(a: [u32; 4], b: [u32; 4]) -> [u32; 4] {
+    unsafe {
+        let av = gamepkg_simd_arch::_mm_loadu_si128(a.as_ptr().cast());
+        let bv = gamepkg_simd_arch::_mm_loadu_si128(b.as_ptr().cast());
+        let mut out = [0u32; 4];
+        gamepkg_simd_arch::_mm_storeu_si128(
+            out.as_mut_ptr().cast(),
+            gamepkg_simd_arch::_mm_add_epi32(av, bv),
+        );
+        out
+    }
+}
+#[cfg(target_arch = "aarch64")]
+#[inline]
+unsafe fn simd_u32x4_add_impl(a: [u32; 4], b: [u32; 4]) -> [u32; 4] {
+    unsafe {
+        let mut out = [0u32; 4];
+        let value = gamepkg_simd_arch::vaddq_u32(
+            gamepkg_simd_arch::vld1q_u32(a.as_ptr()),
+            gamepkg_simd_arch::vld1q_u32(b.as_ptr()),
+        );
+        gamepkg_simd_arch::vst1q_u32(out.as_mut_ptr(), value);
+        out
+    }
+}
+#[cfg(not(any(
+    all(
+        any(target_arch = "x86", target_arch = "x86_64"),
+        target_feature = "sse2"
+    ),
+    target_arch = "aarch64"
+)))]
+#[inline]
+fn simd_u32x4_add_impl(a: [u32; 4], b: [u32; 4]) -> [u32; 4] {
+    std::array::from_fn(|i| a[i].wrapping_add(b[i]))
+}
+
+#[cfg(all(
+    any(target_arch = "x86", target_arch = "x86_64"),
+    target_feature = "avx2"
+))]
+#[target_feature(enable = "avx,avx2")]
+#[inline]
+unsafe fn simd_u32x8_add_impl(a: [u32; 8], b: [u32; 8]) -> [u32; 8] {
+    unsafe {
+        let av = gamepkg_simd_arch::_mm256_loadu_si256(a.as_ptr().cast());
+        let bv = gamepkg_simd_arch::_mm256_loadu_si256(b.as_ptr().cast());
+        let mut out = [0u32; 8];
+        gamepkg_simd_arch::_mm256_storeu_si256(
+            out.as_mut_ptr().cast(),
+            gamepkg_simd_arch::_mm256_add_epi32(av, bv),
+        );
+        out
+    }
+}
+#[cfg(not(all(
+    any(target_arch = "x86", target_arch = "x86_64"),
+    target_feature = "avx2"
+)))]
+#[inline]
+fn simd_u32x8_add_impl(a: [u32; 8], b: [u32; 8]) -> [u32; 8] {
+    let [a0, a1] = split_u32x8(a);
+    let [b0, b1] = split_u32x8(b);
+    let out0 = simd_u32x4_add(a0, b0);
+    let out1 = simd_u32x4_add(a1, b1);
+    [
+        out0[0], out0[1], out0[2], out0[3], out1[0], out1[1], out1[2], out1[3],
+    ]
+}
+#[allow(dead_code)]
+#[inline]
+fn split_u32x8(v: [u32; 8]) -> [[u32; 4]; 2] {
+    [[v[0], v[1], v[2], v[3]], [v[4], v[5], v[6], v[7]]]
+}
+
+#[cfg(all(
+    any(target_arch = "x86", target_arch = "x86_64"),
+    target_feature = "sse2"
+))]
+#[target_feature(enable = "sse2")]
+#[inline]
+unsafe fn simd_f32x4_add_impl(a: [f32; 4], b: [f32; 4]) -> [f32; 4] {
+    unsafe {
+        let av = gamepkg_simd_arch::_mm_loadu_ps(a.as_ptr());
+        let bv = gamepkg_simd_arch::_mm_loadu_ps(b.as_ptr());
+        let mut out = [0f32; 4];
+        gamepkg_simd_arch::_mm_storeu_ps(out.as_mut_ptr(), gamepkg_simd_arch::_mm_add_ps(av, bv));
+        out
+    }
+}
+#[cfg(target_arch = "aarch64")]
+#[inline]
+unsafe fn simd_f32x4_add_impl(a: [f32; 4], b: [f32; 4]) -> [f32; 4] {
+    unsafe {
+        let mut out = [0f32; 4];
+        let value = gamepkg_simd_arch::vaddq_f32(
+            gamepkg_simd_arch::vld1q_f32(a.as_ptr()),
+            gamepkg_simd_arch::vld1q_f32(b.as_ptr()),
+        );
+        gamepkg_simd_arch::vst1q_f32(out.as_mut_ptr(), value);
+        out
+    }
+}
+#[cfg(not(any(
+    all(
+        any(target_arch = "x86", target_arch = "x86_64"),
+        target_feature = "sse2"
+    ),
+    target_arch = "aarch64"
+)))]
+#[inline]
+fn simd_f32x4_add_impl(a: [f32; 4], b: [f32; 4]) -> [f32; 4] {
+    std::array::from_fn(|i| a[i] + b[i])
+}
+
+#[cfg(all(
+    any(target_arch = "x86", target_arch = "x86_64"),
+    target_feature = "sse2"
+))]
+#[target_feature(enable = "sse2")]
+#[inline]
+unsafe fn simd_f32x4_mul_impl(a: [f32; 4], b: [f32; 4]) -> [f32; 4] {
+    unsafe {
+        let av = gamepkg_simd_arch::_mm_loadu_ps(a.as_ptr());
+        let bv = gamepkg_simd_arch::_mm_loadu_ps(b.as_ptr());
+        let mut out = [0f32; 4];
+        gamepkg_simd_arch::_mm_storeu_ps(out.as_mut_ptr(), gamepkg_simd_arch::_mm_mul_ps(av, bv));
+        out
+    }
+}
+#[cfg(target_arch = "aarch64")]
+#[inline]
+unsafe fn simd_f32x4_mul_impl(a: [f32; 4], b: [f32; 4]) -> [f32; 4] {
+    unsafe {
+        let mut out = [0f32; 4];
+        let value = gamepkg_simd_arch::vmulq_f32(
+            gamepkg_simd_arch::vld1q_f32(a.as_ptr()),
+            gamepkg_simd_arch::vld1q_f32(b.as_ptr()),
+        );
+        gamepkg_simd_arch::vst1q_f32(out.as_mut_ptr(), value);
+        out
+    }
+}
+#[cfg(not(any(
+    all(
+        any(target_arch = "x86", target_arch = "x86_64"),
+        target_feature = "sse2"
+    ),
+    target_arch = "aarch64"
+)))]
+#[inline]
+fn simd_f32x4_mul_impl(a: [f32; 4], b: [f32; 4]) -> [f32; 4] {
+    std::array::from_fn(|i| a[i] * b[i])
+}
+
+#[cfg(all(
+    any(target_arch = "x86", target_arch = "x86_64"),
+    target_feature = "avx2"
+))]
+#[target_feature(enable = "avx,avx2")]
+#[inline]
+unsafe fn simd_f32x8_add_impl(a: [f32; 8], b: [f32; 8]) -> [f32; 8] {
+    unsafe {
+        let av = gamepkg_simd_arch::_mm256_loadu_ps(a.as_ptr());
+        let bv = gamepkg_simd_arch::_mm256_loadu_ps(b.as_ptr());
+        let mut out = [0f32; 8];
+        gamepkg_simd_arch::_mm256_storeu_ps(
+            out.as_mut_ptr(),
+            gamepkg_simd_arch::_mm256_add_ps(av, bv),
+        );
+        out
+    }
+}
+#[cfg(all(
+    any(target_arch = "x86", target_arch = "x86_64"),
+    target_feature = "avx2"
+))]
+#[target_feature(enable = "avx,avx2")]
+#[inline]
+unsafe fn simd_f32x8_mul_impl(a: [f32; 8], b: [f32; 8]) -> [f32; 8] {
+    unsafe {
+        let av = gamepkg_simd_arch::_mm256_loadu_ps(a.as_ptr());
+        let bv = gamepkg_simd_arch::_mm256_loadu_ps(b.as_ptr());
+        let mut out = [0f32; 8];
+        gamepkg_simd_arch::_mm256_storeu_ps(
+            out.as_mut_ptr(),
+            gamepkg_simd_arch::_mm256_mul_ps(av, bv),
+        );
+        out
+    }
+}
+#[cfg(not(all(
+    any(target_arch = "x86", target_arch = "x86_64"),
+    target_feature = "avx2"
+)))]
+#[inline]
+fn simd_f32x8_add_impl(a: [f32; 8], b: [f32; 8]) -> [f32; 8] {
+    let [a0, a1] = split_f32x8(a);
+    let [b0, b1] = split_f32x8(b);
+    let out0 = simd_f32x4_add(a0, b0);
+    let out1 = simd_f32x4_add(a1, b1);
+    [
+        out0[0], out0[1], out0[2], out0[3], out1[0], out1[1], out1[2], out1[3],
+    ]
+}
+#[cfg(not(all(
+    any(target_arch = "x86", target_arch = "x86_64"),
+    target_feature = "avx2"
+)))]
+#[inline]
+fn simd_f32x8_mul_impl(a: [f32; 8], b: [f32; 8]) -> [f32; 8] {
+    let [a0, a1] = split_f32x8(a);
+    let [b0, b1] = split_f32x8(b);
+    let out0 = simd_f32x4_mul(a0, b0);
+    let out1 = simd_f32x4_mul(a1, b1);
+    [
+        out0[0], out0[1], out0[2], out0[3], out1[0], out1[1], out1[2], out1[3],
+    ]
+}
+#[allow(dead_code)]
+#[inline]
+fn split_f32x8(v: [f32; 8]) -> [[f32; 4]; 2] {
+    [[v[0], v[1], v[2], v[3]], [v[4], v[5], v[6], v[7]]]
+}
+// Additional fixed-width operations use the same compile-time backend policy.
+// Binary helpers are generated from one reviewed template so every width and
+// backend keeps identical lane order and error behavior.
+macro_rules! gamepkg_simd_f32x4_binary {
+    ($name:ident, $impl:ident, $scalar:expr, $sse:ident, $neon:ident) => {
+        #[inline]
+        pub fn $name(a: [f32; 4], b: [f32; 4]) -> [f32; 4] {
+            #[cfg(any(
+                all(
+                    any(target_arch = "x86", target_arch = "x86_64"),
+                    target_feature = "sse2"
+                ),
+                target_arch = "aarch64"
+            ))]
+            {
+                unsafe { $impl(a, b) }
+            }
+            #[cfg(not(any(
+                all(
+                    any(target_arch = "x86", target_arch = "x86_64"),
+                    target_feature = "sse2"
+                ),
+                target_arch = "aarch64"
+            )))]
+            {
+                $impl(a, b)
+            }
+        }
+        #[cfg(all(
+            any(target_arch = "x86", target_arch = "x86_64"),
+            target_feature = "sse2"
+        ))]
+        #[target_feature(enable = "sse2")]
+        #[inline]
+        unsafe fn $impl(a: [f32; 4], b: [f32; 4]) -> [f32; 4] {
+            unsafe {
+                let av = gamepkg_simd_arch::_mm_loadu_ps(a.as_ptr());
+                let bv = gamepkg_simd_arch::_mm_loadu_ps(b.as_ptr());
+                let mut out = [0f32; 4];
+                gamepkg_simd_arch::_mm_storeu_ps(out.as_mut_ptr(), gamepkg_simd_arch::$sse(av, bv));
+                out
+            }
+        }
+        #[cfg(target_arch = "aarch64")]
+        #[inline]
+        unsafe fn $impl(a: [f32; 4], b: [f32; 4]) -> [f32; 4] {
+            unsafe {
+                let mut out = [0f32; 4];
+                let value = gamepkg_simd_arch::$neon(
+                    gamepkg_simd_arch::vld1q_f32(a.as_ptr()),
+                    gamepkg_simd_arch::vld1q_f32(b.as_ptr()),
+                );
+                gamepkg_simd_arch::vst1q_f32(out.as_mut_ptr(), value);
+                out
+            }
+        }
+        #[cfg(not(any(
+            all(
+                any(target_arch = "x86", target_arch = "x86_64"),
+                target_feature = "sse2"
+            ),
+            target_arch = "aarch64"
+        )))]
+        #[inline]
+        fn $impl(a: [f32; 4], b: [f32; 4]) -> [f32; 4] {
+            std::array::from_fn(|i| ($scalar)(a[i], b[i]))
+        }
+    };
+}
+macro_rules! gamepkg_simd_f32x8_binary {
+    ($name:ident, $impl:ident, $scalar:expr, $x4:ident, $avx:ident) => {
+        #[inline]
+        pub fn $name(a: [f32; 8], b: [f32; 8]) -> [f32; 8] {
+            #[cfg(all(
+                any(target_arch = "x86", target_arch = "x86_64"),
+                target_feature = "avx2"
+            ))]
+            {
+                unsafe { $impl(a, b) }
+            }
+            #[cfg(not(all(
+                any(target_arch = "x86", target_arch = "x86_64"),
+                target_feature = "avx2"
+            )))]
+            {
+                $impl(a, b)
+            }
+        }
+        #[cfg(all(
+            any(target_arch = "x86", target_arch = "x86_64"),
+            target_feature = "avx2"
+        ))]
+        #[target_feature(enable = "avx,avx2")]
+        #[inline]
+        unsafe fn $impl(a: [f32; 8], b: [f32; 8]) -> [f32; 8] {
+            unsafe {
+                let av = gamepkg_simd_arch::_mm256_loadu_ps(a.as_ptr());
+                let bv = gamepkg_simd_arch::_mm256_loadu_ps(b.as_ptr());
+                let mut out = [0f32; 8];
+                gamepkg_simd_arch::_mm256_storeu_ps(
+                    out.as_mut_ptr(),
+                    gamepkg_simd_arch::$avx(av, bv),
+                );
+                out
+            }
+        }
+        #[cfg(not(all(
+            any(target_arch = "x86", target_arch = "x86_64"),
+            target_feature = "avx2"
+        )))]
+        #[inline]
+        fn $impl(a: [f32; 8], b: [f32; 8]) -> [f32; 8] {
+            let [a0, a1] = split_f32x8(a);
+            let [b0, b1] = split_f32x8(b);
+            let out0 = $x4(a0, b0);
+            let out1 = $x4(a1, b1);
+            [
+                out0[0], out0[1], out0[2], out0[3], out1[0], out1[1], out1[2], out1[3],
+            ]
+        }
+    };
+}
+macro_rules! gamepkg_simd_u32x4_binary {
+    ($name:ident, $impl:ident, $scalar:expr, $sse:ident, $neon:ident) => {
+        #[inline]
+        pub fn $name(a: [u32; 4], b: [u32; 4]) -> [u32; 4] {
+            #[cfg(any(
+                all(
+                    any(target_arch = "x86", target_arch = "x86_64"),
+                    target_feature = "sse2"
+                ),
+                target_arch = "aarch64"
+            ))]
+            {
+                unsafe { $impl(a, b) }
+            }
+            #[cfg(not(any(
+                all(
+                    any(target_arch = "x86", target_arch = "x86_64"),
+                    target_feature = "sse2"
+                ),
+                target_arch = "aarch64"
+            )))]
+            {
+                $impl(a, b)
+            }
+        }
+        #[cfg(all(
+            any(target_arch = "x86", target_arch = "x86_64"),
+            target_feature = "sse2"
+        ))]
+        #[target_feature(enable = "sse2")]
+        #[inline]
+        unsafe fn $impl(a: [u32; 4], b: [u32; 4]) -> [u32; 4] {
+            unsafe {
+                let av = gamepkg_simd_arch::_mm_loadu_si128(a.as_ptr().cast());
+                let bv = gamepkg_simd_arch::_mm_loadu_si128(b.as_ptr().cast());
+                let mut out = [0u32; 4];
+                gamepkg_simd_arch::_mm_storeu_si128(
+                    out.as_mut_ptr().cast(),
+                    gamepkg_simd_arch::$sse(av, bv),
+                );
+                out
+            }
+        }
+        #[cfg(target_arch = "aarch64")]
+        #[inline]
+        unsafe fn $impl(a: [u32; 4], b: [u32; 4]) -> [u32; 4] {
+            unsafe {
+                let mut out = [0u32; 4];
+                let value = gamepkg_simd_arch::$neon(
+                    gamepkg_simd_arch::vld1q_u32(a.as_ptr()),
+                    gamepkg_simd_arch::vld1q_u32(b.as_ptr()),
+                );
+                gamepkg_simd_arch::vst1q_u32(out.as_mut_ptr(), value);
+                out
+            }
+        }
+        #[cfg(not(any(
+            all(
+                any(target_arch = "x86", target_arch = "x86_64"),
+                target_feature = "sse2"
+            ),
+            target_arch = "aarch64"
+        )))]
+        #[inline]
+        fn $impl(a: [u32; 4], b: [u32; 4]) -> [u32; 4] {
+            std::array::from_fn(|i| ($scalar)(a[i], b[i]))
+        }
+    };
+}
+macro_rules! gamepkg_simd_u32x8_binary {
+    ($name:ident, $impl:ident, $scalar:expr, $x4:ident, $avx:ident) => {
+        #[inline]
+        pub fn $name(a: [u32; 8], b: [u32; 8]) -> [u32; 8] {
+            #[cfg(all(
+                any(target_arch = "x86", target_arch = "x86_64"),
+                target_feature = "avx2"
+            ))]
+            {
+                unsafe { $impl(a, b) }
+            }
+            #[cfg(not(all(
+                any(target_arch = "x86", target_arch = "x86_64"),
+                target_feature = "avx2"
+            )))]
+            {
+                $impl(a, b)
+            }
+        }
+        #[cfg(all(
+            any(target_arch = "x86", target_arch = "x86_64"),
+            target_feature = "avx2"
+        ))]
+        #[target_feature(enable = "avx,avx2")]
+        #[inline]
+        unsafe fn $impl(a: [u32; 8], b: [u32; 8]) -> [u32; 8] {
+            unsafe {
+                let av = gamepkg_simd_arch::_mm256_loadu_si256(a.as_ptr().cast());
+                let bv = gamepkg_simd_arch::_mm256_loadu_si256(b.as_ptr().cast());
+                let mut out = [0u32; 8];
+                gamepkg_simd_arch::_mm256_storeu_si256(
+                    out.as_mut_ptr().cast(),
+                    gamepkg_simd_arch::$avx(av, bv),
+                );
+                out
+            }
+        }
+        #[cfg(not(all(
+            any(target_arch = "x86", target_arch = "x86_64"),
+            target_feature = "avx2"
+        )))]
+        #[inline]
+        fn $impl(a: [u32; 8], b: [u32; 8]) -> [u32; 8] {
+            let [a0, a1] = split_u32x8(a);
+            let [b0, b1] = split_u32x8(b);
+            let out0 = $x4(a0, b0);
+            let out1 = $x4(a1, b1);
+            [
+                out0[0], out0[1], out0[2], out0[3], out1[0], out1[1], out1[2], out1[3],
+            ]
+        }
+    };
+}
+
+gamepkg_simd_f32x4_binary!(
+    simd_f32x4_sub,
+    simd_f32x4_sub_impl,
+    |x: f32, y: f32| x - y,
+    _mm_sub_ps,
+    vsubq_f32
+);
+gamepkg_simd_f32x4_binary!(
+    simd_f32x4_div,
+    simd_f32x4_div_impl,
+    |x: f32, y: f32| x / y,
+    _mm_div_ps,
+    vdivq_f32
+);
+gamepkg_simd_f32x8_binary!(
+    simd_f32x8_sub,
+    simd_f32x8_sub_impl,
+    |x: f32, y: f32| x - y,
+    simd_f32x4_sub,
+    _mm256_sub_ps
+);
+gamepkg_simd_f32x8_binary!(
+    simd_f32x8_div,
+    simd_f32x8_div_impl,
+    |x: f32, y: f32| x / y,
+    simd_f32x4_div,
+    _mm256_div_ps
+);
+gamepkg_simd_u32x4_binary!(
+    simd_u32x4_sub,
+    simd_u32x4_sub_impl,
+    |x: u32, y: u32| x.wrapping_sub(y),
+    _mm_sub_epi32,
+    vsubq_u32
+);
+gamepkg_simd_u32x4_binary!(
+    simd_u32x4_and,
+    simd_u32x4_and_impl,
+    |x: u32, y: u32| x & y,
+    _mm_and_si128,
+    vandq_u32
+);
+gamepkg_simd_u32x4_binary!(
+    simd_u32x4_or,
+    simd_u32x4_or_impl,
+    |x: u32, y: u32| x | y,
+    _mm_or_si128,
+    vorrq_u32
+);
+gamepkg_simd_u32x4_binary!(
+    simd_u32x4_xor,
+    simd_u32x4_xor_impl,
+    |x: u32, y: u32| x ^ y,
+    _mm_xor_si128,
+    veorq_u32
+);
+gamepkg_simd_u32x8_binary!(
+    simd_u32x8_sub,
+    simd_u32x8_sub_impl,
+    |x: u32, y: u32| x.wrapping_sub(y),
+    simd_u32x4_sub,
+    _mm256_sub_epi32
+);
+gamepkg_simd_u32x8_binary!(
+    simd_u32x8_and,
+    simd_u32x8_and_impl,
+    |x: u32, y: u32| x & y,
+    simd_u32x4_and,
+    _mm256_and_si256
+);
+gamepkg_simd_u32x8_binary!(
+    simd_u32x8_or,
+    simd_u32x8_or_impl,
+    |x: u32, y: u32| x | y,
+    simd_u32x4_or,
+    _mm256_or_si256
+);
+gamepkg_simd_u32x8_binary!(
+    simd_u32x8_xor,
+    simd_u32x8_xor_impl,
+    |x: u32, y: u32| x ^ y,
+    simd_u32x4_xor,
+    _mm256_xor_si256
+);
+
+/// Lane order is fixed; the count is masked to five bits on every backend.
+#[inline]
+pub fn simd_u32x4_shl(v: [u32; 4], bits: u32) -> [u32; 4] {
+    let bits = bits & 31;
+    std::array::from_fn(|i| v[i] << bits)
+}
+#[inline]
+pub fn simd_u32x4_shr(v: [u32; 4], bits: u32) -> [u32; 4] {
+    let bits = bits & 31;
+    std::array::from_fn(|i| v[i] >> bits)
+}
+#[inline]
+pub fn simd_u32x8_shl(v: [u32; 8], bits: u32) -> [u32; 8] {
+    let bits = bits & 31;
+    std::array::from_fn(|i| v[i] << bits)
+}
+#[inline]
+pub fn simd_u32x8_shr(v: [u32; 8], bits: u32) -> [u32; 8] {
+    let bits = bits & 31;
+    std::array::from_fn(|i| v[i] >> bits)
+}
+#[inline]
+pub fn simd_f32x4_abs(v: [f32; 4]) -> [f32; 4] {
+    std::array::from_fn(|i| v[i].abs())
+}
+#[inline]
+pub fn simd_f32x8_abs(v: [f32; 8]) -> [f32; 8] {
+    std::array::from_fn(|i| v[i].abs())
+}
+#[inline]
+pub fn simd_f32x4_neg(v: [f32; 4]) -> [f32; 4] {
+    std::array::from_fn(|i| -v[i])
+}
+#[inline]
+pub fn simd_f32x8_neg(v: [f32; 8]) -> [f32; 8] {
+    std::array::from_fn(|i| -v[i])
+}
+/// Multiply then add with no contraction into a single FMA instruction.
+#[inline]
+pub fn simd_f32x4_mul_add(a: [f32; 4], b: [f32; 4], c: [f32; 4]) -> [f32; 4] {
+    simd_f32x4_add(simd_f32x4_mul(a, b), c)
+}
+#[inline]
+pub fn simd_f32x8_mul_add(a: [f32; 8], b: [f32; 8], c: [f32; 8]) -> [f32; 8] {
+    simd_f32x8_add(simd_f32x8_mul(a, b), c)
+}
+#[inline]
+pub fn simd_u32x4_wrapping_sum(v: [u32; 4]) -> u32 {
+    v.into_iter().fold(0u32, u32::wrapping_add)
+}
+#[inline]
+pub fn simd_f32x4_product(v: [f32; 4]) -> f32 {
+    ((v[0] * v[1]) * v[2]) * v[3]
+}
+#[inline]
+pub fn simd_f32x8_product(v: [f32; 8]) -> f32 {
+    v.into_iter().fold(1f32, |total, lane| total * lane)
+}
+#[inline]
+pub fn simd_f32x4_dot(a: [f32; 4], b: [f32; 4]) -> f32 {
+    simd_f32x4_sum(simd_f32x4_mul(a, b))
+}
+#[inline]
+pub fn simd_f32x8_dot(a: [f32; 8], b: [f32; 8]) -> f32 {
+    simd_f32x8_sum(simd_f32x8_mul(a, b))
+}
+#[inline]
+fn fixed_f32_min<const N: usize>(v: [f32; N]) -> f32 {
+    let mut total = v[0];
+    for lane in &v[1..] {
+        total = if total.is_nan() || lane.is_nan() {
+            f32::NAN
+        } else {
+            total.min(*lane)
+        };
+    }
+    total
+}
+#[inline]
+fn fixed_f32_max<const N: usize>(v: [f32; N]) -> f32 {
+    let mut total = v[0];
+    for lane in &v[1..] {
+        total = if total.is_nan() || lane.is_nan() {
+            f32::NAN
+        } else {
+            total.max(*lane)
+        };
+    }
+    total
+}
+/// Any NaN input yields NaN on every reviewed backend.
+#[inline]
+pub fn simd_f32x4_min(v: [f32; 4]) -> f32 {
+    fixed_f32_min(v)
+}
+#[inline]
+pub fn simd_f32x4_max(v: [f32; 4]) -> f32 {
+    fixed_f32_max(v)
+}
+#[inline]
+pub fn simd_f32x8_min(v: [f32; 8]) -> f32 {
+    fixed_f32_min(v)
+}
+#[inline]
+pub fn simd_f32x8_max(v: [f32; 8]) -> f32 {
+    fixed_f32_max(v)
+}
 /// Open a separately closeable, read-only byte range on a selected ROM grant.
 pub fn file_rom_view(grant: u64, start: u64, length: u64) -> std::result::Result<u64, i32> {
     let request = [
@@ -872,6 +1691,212 @@ pub fn rumble(player: u32, low: u16, high: u16, milliseconds: u32) -> std::resul
         &mut [],
     )?;
     Ok(())
+}
+
+/// One motor pulse for one numbered VI field. The host rejects a repeated or
+/// out-of-order frame, so a game cannot retrigger a motor by replaying a frame.
+pub fn rumble_frame(player: u32, low: u16, high: u16, frame: u64) -> std::result::Result<(), i32> {
+    if player >= 4 || frame == 0 {
+        return Err(-1);
+    }
+    call(
+        57,
+        &[
+            player.to_le_bytes().as_slice(),
+            u32::from(low).to_le_bytes().as_slice(),
+            u32::from(high).to_le_bytes().as_slice(),
+            frame.to_le_bytes().as_slice(),
+        ]
+        .concat(),
+        &mut [],
+    )?;
+    Ok(())
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ViCadence {
+    pub standard: u32,
+    pub period_ns: u64,
+    pub fields_per_frame: u32,
+}
+
+/// Select a reviewed VI standard and return its exact host-pinned field period.
+pub fn select_vi_cadence(standard: u32) -> std::result::Result<ViCadence, i32> {
+    let mut reply = [0; 16];
+    if call(58, &standard.to_le_bytes(), &mut reply)? != reply.len() {
+        return Err(-3);
+    }
+    let cadence = ViCadence {
+        period_ns: u64::from_le_bytes(reply[0..8].try_into().unwrap()),
+        standard: u32::from_le_bytes(reply[8..12].try_into().unwrap()),
+        fields_per_frame: u32::from_le_bytes(reply[12..16].try_into().unwrap()),
+    };
+    if cadence.standard != standard || cadence.period_ns == 0 || cadence.fields_per_frame == 0 {
+        return Err(-3);
+    }
+    Ok(cadence)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DacTiming {
+    pub sample_rate: u32,
+    pub block_samples: u32,
+    pub field_samples: u32,
+    pub callback_blocks: u32,
+}
+
+/// Derive the reviewed 32 kHz-class DAC callback cadence from a VI period.
+/// The integer domain avoids floating-point drift between guest and host.
+pub fn dac_timing(cadence: ViCadence) -> DacTiming {
+    const RATE: u128 = 32_028;
+    const BLOCK: u128 = 560;
+    let samples = (RATE * u128::from(cadence.period_ns) + 500_000_000) / 1_000_000_000;
+    let samples = u32::try_from(samples).unwrap_or(u32::MAX);
+    DacTiming {
+        sample_rate: RATE as u32,
+        block_samples: BLOCK as u32,
+        field_samples: samples,
+        callback_blocks: samples.div_ceil(BLOCK as u32),
+    }
+}
+
+/// Straight-alpha RGBA8 glyph pixels from the host's dependency-free bitmap font.
+/// The game never reads a font file or calls a platform font API.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FontGlyph {
+    pub width: u32,
+    pub height: u32,
+    pub advance: u32,
+    pub rgba: Vec<u8>,
+}
+
+pub fn font_glyph(font: u32, codepoint: u32, size: u32) -> std::result::Result<FontGlyph, i32> {
+    if font != 0 || size == 0 || size > 32 {
+        return Err(-1);
+    }
+    let width = 5 * size;
+    let height = 7 * size;
+    let mut reply = vec![0u8; 12 + (width * height * 4) as usize];
+    let request = [
+        font.to_le_bytes(),
+        codepoint.to_le_bytes(),
+        size.to_le_bytes(),
+    ]
+    .concat();
+    let used = call(75, &request, &mut reply)?;
+    if used < 12 {
+        return Err(-3);
+    }
+    let parsed_width = u32::from_le_bytes(reply[0..4].try_into().unwrap());
+    let parsed_height = u32::from_le_bytes(reply[4..8].try_into().unwrap());
+    let advance = u32::from_le_bytes(reply[8..12].try_into().unwrap());
+    if parsed_width != width || parsed_height != height || used != reply.len() {
+        return Err(-3);
+    }
+    Ok(FontGlyph {
+        width,
+        height,
+        advance,
+        rgba: reply[12..].to_vec(),
+    })
+}
+
+/// Stable identity for a reviewed J3D/GX state. The game supplies only data
+/// words; the host validates them against the signed template catalog.
+pub fn j3d_state_identity(template: u32, state: &[u32; 48]) -> std::result::Result<[u8; 32], i32> {
+    let mut request = Vec::with_capacity(196);
+    request.extend_from_slice(&template.to_le_bytes());
+    for word in state {
+        request.extend_from_slice(&word.to_le_bytes());
+    }
+    let mut reply = [0u8; 32];
+    if call(156, &request, &mut reply)? != 32 {
+        return Err(-3);
+    }
+    Ok(reply)
+}
+
+/// Recall the exact canonical state bytes for a previously accepted identity.
+pub fn j3d_state(identity: &[u8; 32]) -> std::result::Result<[u32; 48], i32> {
+    let mut reply = [0u8; 192];
+    if call(157, identity, &mut reply)? != reply.len() {
+        return Err(-3);
+    }
+    let mut out = [0u32; 48];
+    for (index, word) in out.iter_mut().enumerate() {
+        *word = u32::from_le_bytes(reply[index * 4..index * 4 + 4].try_into().unwrap());
+    }
+    Ok(out)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ThpFramePlan {
+    pub field: u64,
+    pub vi_deadline_ns: u64,
+    pub dac_callbacks: u32,
+}
+
+/// Exact VI retrace deadline and DAC callback count for one logical field.
+pub fn thp_frame_plan(
+    standard: u32,
+    start_ns: u64,
+    field: u64,
+) -> std::result::Result<ThpFramePlan, i32> {
+    let mut request = Vec::with_capacity(20);
+    request.extend_from_slice(&standard.to_le_bytes());
+    request.extend_from_slice(&start_ns.to_le_bytes());
+    request.extend_from_slice(&field.to_le_bytes());
+    let mut reply = [0u8; 24];
+    if call(158, &request, &mut reply)? != reply.len() {
+        return Err(-3);
+    }
+    let parsed = ThpFramePlan {
+        field: u64::from_le_bytes(reply[0..8].try_into().unwrap()),
+        vi_deadline_ns: u64::from_le_bytes(reply[8..16].try_into().unwrap()),
+        dac_callbacks: u32::from_le_bytes(reply[16..20].try_into().unwrap()),
+    };
+    if parsed.field != field
+        || u32::from_le_bytes(reply[20..24].try_into().unwrap()) != 0
+        || parsed.dac_callbacks == 0
+    {
+        return Err(-3);
+    }
+    Ok(parsed)
+}
+
+/// Convert decoded YCbCr 4:2:0 planes through the host's fixed-point GX/TEV
+/// presentation path. No media framework or video file access is exposed.
+pub fn thp_display_rgba(
+    width: u32,
+    height: u32,
+    y: &[u8],
+    u: &[u8],
+    v: &[u8],
+) -> std::result::Result<Vec<u8>, i32> {
+    if width == 0
+        || height == 0
+        || width > 2048
+        || height > 2048
+        || width % 2 != 0
+        || height % 2 != 0
+    {
+        return Err(-1);
+    }
+    let luma = (width as usize).checked_mul(height as usize).ok_or(-1)?;
+    if y.len() != luma || u.len() != luma / 4 || v.len() != luma / 4 {
+        return Err(-1);
+    }
+    let mut request = Vec::with_capacity(8 + y.len() + u.len() + v.len());
+    request.extend_from_slice(&width.to_le_bytes());
+    request.extend_from_slice(&height.to_le_bytes());
+    request.extend_from_slice(y);
+    request.extend_from_slice(u);
+    request.extend_from_slice(v);
+    let mut reply = vec![0u8; luma * 4];
+    if call(159, &request, &mut reply)? != reply.len() {
+        return Err(-3);
+    }
+    Ok(reply)
 }
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct InputEvent {
@@ -2220,6 +3245,113 @@ mod tests {
         File::from(OwnedFd::from(s))
     }
     #[test]
+    fn generated_simd_helpers_are_direct_fixed_width_operations() {
+        assert_eq!(
+            simd_u32x4_add([1, 2, 3, 4], [10, 20, 30, 40]),
+            [11, 22, 33, 44]
+        );
+        assert_eq!(
+            simd_u32x8_add([1, 2, 3, 4, 5, 6, 7, 8], [10, 20, 30, 40, 50, 60, 70, 80]),
+            [11, 22, 33, 44, 55, 66, 77, 88]
+        );
+        assert_eq!(simd_u32x8_wrapping_sum([1, 2, 3, 4, 5, 6, 7, 8]), 36);
+        assert_eq!(
+            simd_f32x4_add([1.0, 2.0, 3.0, 4.0], [10.0, 20.0, 30.0, 40.0]),
+            [11.0, 22.0, 33.0, 44.0]
+        );
+        assert_eq!(
+            simd_f32x4_mul([1.0, 2.0, 3.0, 4.0], [10.0, 20.0, 30.0, 40.0]),
+            [10.0, 40.0, 90.0, 160.0]
+        );
+        assert_eq!(simd_f32x4_sum([1.0, 2.0, 3.0, 4.0]), 10.0);
+        assert_eq!(
+            simd_f32x8_add(
+                [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+                [10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0]
+            ),
+            [11.0, 22.0, 33.0, 44.0, 55.0, 66.0, 77.0, 88.0]
+        );
+        assert_eq!(
+            simd_f32x8_mul(
+                [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+                [10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0]
+            ),
+            [10.0, 40.0, 90.0, 160.0, 250.0, 360.0, 490.0, 640.0]
+        );
+        assert_eq!(
+            simd_f32x8_sum([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]),
+            36.0
+        );
+        assert_eq!(simd_u32x4_wrapping_sum([1, 2, 3, 4]), 10);
+        assert_eq!(
+            simd_u32x4_sub([10, 20, 30, 40], [1, 2, 3, 4]),
+            [9, 18, 27, 36]
+        );
+        assert_eq!(
+            simd_u32x8_sub([10, 20, 30, 40, 50, 60, 70, 80], [1, 2, 3, 4, 5, 6, 7, 8]),
+            [9, 18, 27, 36, 45, 54, 63, 72]
+        );
+        assert_eq!(
+            simd_u32x4_and([0xf0, 0x0f, 0xaa, 0x55], [0xff, 0x0f, 0x55, 0xaa]),
+            [0xf0, 0x0f, 0x00, 0x00]
+        );
+        assert_eq!(
+            simd_u32x4_or([0xf0, 0x0f, 0xaa, 0x55], [0x0f, 0x10, 0x55, 0xaa]),
+            [0xff, 0x1f, 0xff, 0xff]
+        );
+        assert_eq!(
+            simd_u32x4_xor([0xff, 0x0f, 0xaa, 0x55], [0x0f, 0x0f, 0x55, 0xaa]),
+            [0xf0, 0x00, 0xff, 0xff]
+        );
+        assert_eq!(
+            simd_u32x8_xor([1, 2, 3, 4, 5, 6, 7, 8], [0, 1, 0, 1, 0, 1, 0, 1]),
+            [1, 3, 3, 5, 5, 7, 7, 9]
+        );
+        assert_eq!(simd_u32x4_shl([1, 2, 3, 4], 2), [4, 8, 12, 16]);
+        assert_eq!(simd_u32x4_shr([16, 32, 64, 128], 4), [1, 2, 4, 8]);
+        assert_eq!(
+            simd_f32x4_sub([10.0, 20.0, 30.0, 40.0], [2.0, 4.0, 5.0, 8.0]),
+            [8.0, 16.0, 25.0, 32.0]
+        );
+        assert_eq!(
+            simd_f32x4_div([10.0, 20.0, 30.0, 40.0], [2.0, 4.0, 5.0, 8.0]),
+            [5.0, 5.0, 6.0, 5.0]
+        );
+        assert_eq!(
+            simd_f32x8_div(
+                [10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0],
+                [2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0]
+            ),
+            [5.0, 10.0, 15.0, 20.0, 25.0, 30.0, 35.0, 40.0]
+        );
+        assert_eq!(simd_f32x4_abs([-1.0, 2.0, -3.0, 4.0]), [1.0, 2.0, 3.0, 4.0]);
+        assert_eq!(
+            simd_f32x4_neg([-1.0, 2.0, -3.0, 4.0]),
+            [1.0, -2.0, 3.0, -4.0]
+        );
+        assert_eq!(
+            simd_f32x4_mul_add(
+                [1.0, 2.0, 3.0, 4.0],
+                [10.0, 20.0, 30.0, 40.0],
+                [1.0, 2.0, 3.0, 4.0]
+            ),
+            [11.0, 42.0, 93.0, 164.0]
+        );
+        assert_eq!(simd_f32x4_product([1.0, 2.0, 3.0, 4.0]), 24.0);
+        assert_eq!(
+            simd_f32x8_product([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]),
+            40320.0
+        );
+        assert_eq!(
+            simd_f32x4_dot([1.0, 2.0, 3.0, 4.0], [10.0, 20.0, 30.0, 40.0]),
+            300.0
+        );
+        assert_eq!(simd_f32x4_min([3.0, 1.0, 4.0, 2.0]), 1.0);
+        assert_eq!(simd_f32x4_max([3.0, 1.0, 4.0, 2.0]), 4.0);
+        assert!(simd_f32x8_min([3.0, f32::NAN, 4.0, 2.0, 0.0, 9.0, 8.0, 7.0]).is_nan());
+        assert!(simd_f32x8_max([3.0, 1.0, 4.0, 2.0, 0.0, 9.0, f32::NAN, 7.0]).is_nan());
+    }
+    #[test]
     fn audio_create_reuses_existing_wire_format_and_propagates_unsupported() {
         let _exclusive = TEST_BINDING_LOCK
             .lock()
@@ -2601,6 +3733,148 @@ mod local_clock_decode_tests {
             assert_eq!(local_clock_state_decode(&value), Err(-3));
         }
     }
+    #[test]
+    fn host_font_and_vi_helpers_use_exact_wire_layouts() {
+        let _exclusive = TEST_BINDING_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        connect_local(|operation, request, capacity| match operation {
+            58 => {
+                assert_eq!(request, 0u32.to_le_bytes());
+                assert_eq!(capacity, 16);
+                Ok([
+                    16_683_350u64.to_le_bytes().as_slice(),
+                    0u32.to_le_bytes().as_slice(),
+                    2u32.to_le_bytes().as_slice(),
+                ]
+                .concat())
+            }
+            57 => {
+                assert_eq!(
+                    request,
+                    [
+                        1u32.to_le_bytes().as_slice(),
+                        20u32.to_le_bytes().as_slice(),
+                        30u32.to_le_bytes().as_slice(),
+                        9u64.to_le_bytes().as_slice(),
+                    ]
+                    .concat()
+                );
+                assert_eq!(capacity, 0);
+                Ok(Vec::new())
+            }
+            75 => {
+                assert_eq!(
+                    request,
+                    [
+                        0u32.to_le_bytes(),
+                        u32::from(b'A').to_le_bytes(),
+                        1u32.to_le_bytes(),
+                    ]
+                    .concat()
+                );
+                assert_eq!(capacity, 12 + 5 * 7 * 4);
+                Ok([
+                    5u32.to_le_bytes().as_slice(),
+                    7u32.to_le_bytes().as_slice(),
+                    6u32.to_le_bytes().as_slice(),
+                    vec![0xffu8; 5 * 7 * 4].as_slice(),
+                ]
+                .concat())
+            }
+            _ => Err(-5),
+        })
+        .unwrap();
+        let cadence = select_vi_cadence(0).unwrap();
+        assert_eq!(cadence.period_ns, 16_683_350);
+        assert_eq!(cadence.fields_per_frame, 2);
+        let dac = dac_timing(cadence);
+        assert_eq!(dac.sample_rate, 32_028);
+        assert_eq!(dac.block_samples, 560);
+        assert_eq!(dac.callback_blocks, 1);
+        assert_eq!(rumble_frame(1, 20, 30, 9), Ok(()));
+        assert_eq!(rumble_frame(4, 20, 30, 9), Err(-1));
+        let glyph = font_glyph(0, u32::from(b'A'), 1).unwrap();
+        assert_eq!((glyph.width, glyph.height, glyph.advance), (5, 7, 6));
+        assert_eq!(glyph.rgba, vec![0xff; 5 * 7 * 4]);
+        assert_eq!(font_glyph(1, u32::from(b'A'), 1), Err(-1));
+        disconnect();
+    }
+
+    #[test]
+    fn j3d_and_thp_helpers_use_exact_wire_layouts() {
+        let _exclusive = TEST_BINDING_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let mut canonical = [0u32; 48];
+        canonical[10] = 1;
+        let canonical_bytes: Vec<u8> = canonical
+            .iter()
+            .flat_map(|word| word.to_le_bytes())
+            .collect();
+        connect_local(move |operation, request, capacity| match operation {
+            156 => {
+                assert_eq!(request.len(), 196);
+                assert_eq!(u32::from_le_bytes(request[..4].try_into().unwrap()), 3);
+                assert_eq!(&request[4..], canonical_bytes.as_slice());
+                assert_eq!(capacity, 32);
+                Ok(vec![0x11; 32])
+            }
+            157 => {
+                assert_eq!(request, vec![0x11; 32]);
+                assert_eq!(capacity, 192);
+                Ok(canonical_bytes.clone())
+            }
+            158 => {
+                assert_eq!(
+                    request,
+                    [
+                        0u32.to_le_bytes().as_slice(),
+                        100u64.to_le_bytes().as_slice(),
+                        2u64.to_le_bytes().as_slice(),
+                    ]
+                    .concat()
+                );
+                assert_eq!(capacity, 24);
+                Ok([
+                    2u64.to_le_bytes().as_slice(),
+                    (100 + 2 * 16_683_350u64).to_le_bytes().as_slice(),
+                    1u32.to_le_bytes().as_slice(),
+                    0u32.to_le_bytes().as_slice(),
+                ]
+                .concat())
+            }
+            159 => {
+                assert_eq!(
+                    request,
+                    [
+                        2u32.to_le_bytes().as_slice(),
+                        2u32.to_le_bytes().as_slice(),
+                        [16u8; 4].as_slice(),
+                        [128u8].as_slice(),
+                        [128u8].as_slice(),
+                    ]
+                    .concat()
+                );
+                assert_eq!(capacity, 16);
+                Ok(vec![0; 16])
+            }
+            _ => Err(-5),
+        })
+        .unwrap();
+        assert_eq!(j3d_state_identity(3, &canonical), Ok([0x11; 32]));
+        assert_eq!(j3d_state(&[0x11; 32]), Ok(canonical));
+        let plan = thp_frame_plan(0, 100, 2).unwrap();
+        assert_eq!(plan.vi_deadline_ns, 100 + 2 * 16_683_350);
+        assert_eq!(plan.dac_callbacks, 1);
+        assert_eq!(
+            thp_display_rgba(2, 2, &[16; 4], &[128], &[128]),
+            Ok(vec![0; 16])
+        );
+        assert_eq!(thp_display_rgba(3, 2, &[16; 6], &[128], &[128]), Err(-1));
+        disconnect();
+    }
+
     #[test]
     fn local_clock_wait_replies_cannot_fabricate_expiry_or_wakeup() {
         let deadline = [state(500, 1000, 7), 0u32.to_le_bytes().to_vec()].concat();

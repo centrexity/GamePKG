@@ -394,6 +394,47 @@ pub(super) fn dispatch<B: Backend>(
             }
             Ok(out)
         }
+        57 => {
+            permitted(host.permissions.input)?;
+            let player = r.u32()? as usize;
+            let low = r.u32()?;
+            let high = r.u32()?;
+            let frame = r.u64()?;
+            r.end()?;
+            if player >= 4 || low > 65535 || high > 65535 || frame == 0 {
+                return Err(Error::Invalid);
+            }
+            // A pulse belongs to exactly one numbered VI frame. Replaying or
+            // reordering a frame cannot re-trigger a motor on this session.
+            if host.rumble_frames[player].is_some_and(|last| frame <= last) {
+                return Err(Error::Invalid);
+            }
+            let pad = host.input.gamepad(player).ok_or(Error::Denied)?;
+            if pad.device == 0 || !host.window.focused || host.window.closed {
+                return Err(Error::Denied);
+            }
+            host.backend.rumble_frame(
+                pad.device,
+                low as u16,
+                high as u16,
+                host.vi_cadence.period_ns,
+            )?;
+            host.rumble_frames[player] = Some(frame);
+            Ok(Vec::new())
+        }
+        58 => {
+            room(cap, 16)?;
+            let standard = r.u32()?;
+            r.end()?;
+            let cadence = timing::vi_cadence(standard).ok_or(Error::Invalid)?;
+            host.vi_cadence = cadence;
+            Ok([
+                cadence.period_ns.to_le_bytes().as_slice(),
+                &cadence.standard.to_le_bytes(),
+                &cadence.fields_per_frame.to_le_bytes(),
+            ]
+            .concat())
+        }
         50 => network_dispatch(
             &mut *host.network.lock().map_err(|_| Error::Failed)?,
             host.permissions.network,
@@ -453,6 +494,64 @@ pub(super) fn dispatch<B: Backend>(
             let [width, height] = image.size();
             let id = retain_image(host, width as u32, height as u32, image.pixels())?;
             Ok(id.to_le_bytes().to_vec())
+        }
+        75 => {
+            room(cap, 12)?;
+            let font = r.u32()?;
+            let codepoint = r.u32()?;
+            let size = r.u32()?;
+            r.end()?;
+            if font != 0 {
+                return Err(Error::Unsupported);
+            }
+            let glyph = font::rasterize(codepoint, size).ok_or(Error::Invalid)?;
+            room(cap, 12 + glyph.rgba.len())?;
+            Ok([
+                glyph.width.to_le_bytes().as_slice(),
+                &glyph.height.to_le_bytes(),
+                &glyph.advance.to_le_bytes(),
+                glyph.rgba.as_slice(),
+            ]
+            .concat())
+        }
+        158 => {
+            room(cap, 24)?;
+            let standard = r.u32()?;
+            let start = r.u64()?;
+            let field = r.u64()?;
+            r.end()?;
+            let plan = video::frame_plan(standard, start, field).ok_or(Error::Invalid)?;
+            Ok([
+                plan.field.to_le_bytes().as_slice(),
+                &plan.vi_deadline_ns.to_le_bytes(),
+                &plan.dac_callbacks.to_le_bytes(),
+                &0u32.to_le_bytes(),
+            ]
+            .concat())
+        }
+        159 => {
+            let width = r.u32()?;
+            let height = r.u32()?;
+            if width == 0
+                || height == 0
+                || width > 2048
+                || height > 2048
+                || width % 2 != 0
+                || height % 2 != 0
+            {
+                return Err(Error::Invalid);
+            }
+            let luma = (width as usize)
+                .checked_mul(height as usize)
+                .ok_or(Error::Invalid)?;
+            let chroma = luma / 4;
+            let y = r.bytes(luma)?;
+            let u = r.bytes(chroma)?;
+            let v = r.bytes(chroma)?;
+            r.end()?;
+            let rgba = video::yuv420_to_rgba(width, height, y, u, v)?;
+            room(cap, rgba.len())?;
+            Ok(rgba)
         }
         126 => {
             let mask = r.u32()?;

@@ -39,6 +39,7 @@ mod sdk_source;
 #[cfg(test)]
 mod tests;
 pub mod timing;
+pub mod video;
 #[cfg(feature = "gui")]
 pub mod winit_input;
 
@@ -136,6 +137,8 @@ pub fn build_identity() -> String {
         include_str!("../../vendor/fearless_simd/src/lib.rs"),
         include_str!("../../compat/image/Cargo.toml"),
         include_str!("../../compat/image/src/lib.rs"),
+        include_str!("../../compat/font/Cargo.toml"),
+        include_str!("../../compat/font/src/lib.rs"),
         include_str!("../../compat/zstd/Cargo.toml"),
         include_str!("../../compat/zstd/src/lib.rs"),
         include_str!("../../compat/deflate/Cargo.toml"),
@@ -199,6 +202,9 @@ pub struct Session<B: Backend> {
     leases: Vec<Arc<std::fs::File>>,
     diagnostics: diagnostics::Diagnostics,
     launch_options: Option<[u8; 8]>,
+    vi_cadence: timing::ViCadence,
+    /// Last accepted exact frame number for each logical player.
+    rumble_frames: [Option<u64>; 4],
     tick: Option<tick_services::Services>,
 }
 impl<B: Backend> Session<B> {
@@ -220,6 +226,8 @@ impl<B: Backend> Session<B> {
             leases: Vec::new(),
             diagnostics: diagnostics::Diagnostics::default(),
             launch_options: None,
+            vi_cadence: timing::vi_cadence(timing::VI_NTSC).unwrap(),
+            rumble_frames: [None; 4],
             tick: None,
         }
     }

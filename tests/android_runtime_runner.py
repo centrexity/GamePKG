@@ -156,7 +156,7 @@ elif '--test-threads=1' in args[3] and os.environ.get('CONTROL_FAIL_SUITE'):
         self.assertCountEqual(suites, self.compiled)
         calls = [json.loads(line) for line in self.log.read_text().splitlines()]
         permissions = [args for args in calls if args[2] == "shell" and args[3].startswith("chmod 700 ")]
-        self.assertEqual(len(permissions), 9)
+        self.assertEqual(len(permissions), 8)
         self.assertEqual(len(publication), 1)
 
     def test_unsafe_remote_filename_is_rejected_before_device_changes(self):

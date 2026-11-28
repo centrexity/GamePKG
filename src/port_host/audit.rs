@@ -70,6 +70,31 @@ fn reserved(symbol: &str) -> bool {
 // Unicode, and implicit bounds/arithmetic traps. These helpers operate on
 // in-memory values only. Never accept a crate or namespace prefix.
 // The final builder pins panic=abort and the exact compiler/sysroot identity.
+// Collection growth is the one place where the compiler substitutes concrete
+// types into an otherwise reviewed helper. Admit only that exact semantic
+// shape, never a crate/namespace prefix or a monomorphized hash.
+fn audited_collection_helper(name: &str) -> bool {
+    if name == "alloc::raw_vec::RawVec<T,A>::grow_one" {
+        return true;
+    }
+    let Some(args) = name
+        .strip_prefix("<alloc::raw_vec::RawVec<")
+        .and_then(|rest| rest.strip_suffix(">>::grow_one"))
+    else {
+        return false;
+    };
+    !args.is_empty()
+        && args.len() <= 256
+        && args.split(',').count() <= 2
+        && args.split(',').all(|argument| {
+            !argument.is_empty()
+                && argument.len() <= 128
+                && argument
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b':'))
+        })
+}
+
 fn rust_runtime(symbol: &str) -> bool {
     let symbol = symbol
         .strip_prefix('_')
@@ -78,8 +103,12 @@ fn rust_runtime(symbol: &str) -> bool {
     let Ok(name) = rustc_demangle::try_demangle(symbol) else {
         return false;
     };
+    let demangled = format!("{name:#}");
+    if audited_collection_helper(&demangled) {
+        return true;
+    }
     matches!(
-        format!("{name:#}").as_str(),
+        demangled.as_str(),
         "__rustc::__rust_alloc"
             | "__rustc::__rust_dealloc"
             | "__rustc::__rust_realloc"
@@ -94,6 +123,10 @@ fn rust_runtime(symbol: &str) -> bool {
             | "<alloc::string::String as core::clone::Clone>::clone"
             | "core::char::methods::encode_utf8_raw::do_panic::runtime"
             | "core::slice::<impl [T]>::copy_from_slice::len_mismatch_fail"
+            // Rust 1.89's v0 mangling demangles the same in-bounds helper under
+            // the internal `copy_from_slice_impl` module. Keep both stable
+            // names; arbitrary `core` symbols remain rejected.
+            | "core::slice::copy_from_slice_impl::len_mismatch_fail"
             | "core::slice::sort::shared::smallsort::panic_on_ord_violation"
             | "core::slice::sort::stable::drift::sqrt_approx"
             | "core::slice::memchr::memchr_aligned"
@@ -571,11 +604,21 @@ mod tests {
         let bounds = "_ZN4core5slice5index24slice_end_index_len_fail17heb50b9bbe4663132E";
         let v0_bounds = "_RNvNtNtCs8uuN1nrGffB_4core5slice5index16slice_index_fail";
         let alloc = "_RNvCs73fAdSrgOJL_7___rustc12___rust_alloc";
+        // Hosted stable 1.100 emits this exact v0 symbol for the same in-memory
+        // bounds trap; the crate disambiguator is intentionally not matched.
+        let v0_copy_len =
+            "_RNvNvNtCsiNekjdl96nZ_4core5slice20copy_from_slice_impl17len_mismatch_fail";
+        let grow_one = "_ZN5alloc7raw_vec19RawVec$LT$T$C$A$GT$8grow_one17h61a2706ed3b5fad4E";
+        let v0_grow_one =
+            "_RNvMs0_NtCs8Ty2CzGA6U3_5alloc7raw_vecINtB5_6RawVecmE8grow_oneCs8JWZv0a4SEs_5probe";
         check_symbols(
             [
                 bounds,
                 v0_bounds,
                 alloc,
+                v0_copy_len,
+                grow_one,
+                v0_grow_one,
                 "gamepkg_local_call",
                 "gamepkg_port_utf8_validate",
                 "_gamepkg_port_utf8_validate",
@@ -587,6 +630,9 @@ mod tests {
             bounds,
             v0_bounds,
             alloc,
+            v0_copy_len,
+            grow_one,
+            v0_grow_one,
             "gamepkg_local_call",
             "gamepkg_port_utf8_validate",
             "_gamepkg_port_utf8_validate",

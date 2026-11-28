@@ -37,6 +37,11 @@ use std::{
 pub struct NativeLaunch {
     #[command(flatten)]
     pub graphics: crate::launch_options::LaunchArgs,
+    /// Host-owned preference loaded from the signed game identity. Kept here
+    /// so the command line and op 67 cannot disagree after launch. It is never
+    /// accepted from the child command line or a signed package.
+    #[arg(skip)]
+    pub saved: Option<crate::launch_options::LaunchOptions>,
     #[arg(long)]
     pub visible: bool,
     #[arg(long)]
@@ -52,7 +57,9 @@ pub struct NativeLaunch {
 impl NativeLaunch {
     pub(super) fn arguments(self, manifest: &crate::manifest::Manifest) -> Result<Vec<String>> {
         ensure!(self.volume <= 100, "audio volume must be 0–100");
-        let mut args = self.graphics.resolved(manifest.launch_options)?.arguments();
+        let base = self.saved.or(manifest.launch_options);
+        let graphics = self.graphics.resolved(base)?;
+        let mut args = graphics.arguments();
         args.extend(["--volume".into(), self.volume.to_string()]);
         if self.visible {
             args.push("--visible".into());

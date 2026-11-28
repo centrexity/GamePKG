@@ -17,6 +17,75 @@ pub struct PerformanceSample {
     pub frequency: u64,
     pub uptime_ms: u64,
 }
+/// Fixed VI field cadence. The standard is an opaque game-selected domain;
+/// no wall-clock calibration or host display refresh is inferred from it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ViCadence {
+    pub standard: u32,
+    pub period_ns: u64,
+    pub fields_per_frame: u32,
+}
+pub const VI_NTSC: u32 = 0;
+pub const VI_PAL: u32 = 1;
+pub const VI_NTSC_120: u32 = 2;
+
+/// Return the exact, host-pinned field period for a reviewed VI standard.
+pub const fn vi_cadence(standard: u32) -> Option<ViCadence> {
+    Some(match standard {
+        VI_NTSC => ViCadence {
+            standard,
+            period_ns: 16_683_350,
+            fields_per_frame: 2,
+        },
+        VI_PAL => ViCadence {
+            standard,
+            period_ns: 20_000_000,
+            fields_per_frame: 2,
+        },
+        VI_NTSC_120 => ViCadence {
+            standard,
+            period_ns: 8_341_675,
+            fields_per_frame: 1,
+        },
+        _ => return None,
+    })
+}
+
+/// Absolute session deadline for a field number, using checked arithmetic.
+pub const fn vi_deadline(start_ns: u64, field: u64, period_ns: u64) -> Option<u64> {
+    match field.checked_mul(period_ns) {
+        Some(delta) => start_ns.checked_add(delta),
+        None => None,
+    }
+}
+
+/// 32 kHz-class GameCube DAC timing: one 560-sample AI DMA block and the
+/// number of complete callback blocks in one VI field.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DacTiming {
+    pub sample_rate: u32,
+    pub block_samples: u32,
+    pub field_samples: u32,
+    pub callback_blocks: u32,
+}
+pub const fn dac_timing(standard: u32) -> Option<DacTiming> {
+    let cadence = match vi_cadence(standard) {
+        Some(value) => value,
+        None => return None,
+    };
+    // Retail DAC is 32028.515625 Hz; the integer domain uses 32028 Hz so
+    // guest and host agree without floating point.
+    const RATE: u64 = 32_028;
+    const BLOCK: u64 = 560;
+    let samples = (RATE * cadence.period_ns + 500_000_000) / 1_000_000_000;
+    let samples = samples as u32;
+    Some(DacTiming {
+        sample_rate: RATE as u32,
+        block_samples: BLOCK as u32,
+        field_samples: samples,
+        callback_blocks: samples.div_ceil(BLOCK as u32),
+    })
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Anchor {
     counter: u64,
@@ -392,5 +461,26 @@ mod tests {
         let (actual, _, reason) = clock.wait(end, generation).unwrap();
         assert!(actual >= end);
         assert_eq!(reason, 0);
+    }
+    #[test]
+    fn vi_and_dac_cadences_are_fixed_and_checked() {
+        assert_eq!(
+            vi_cadence(VI_NTSC),
+            Some(ViCadence {
+                standard: VI_NTSC,
+                period_ns: 16_683_350,
+                fields_per_frame: 2,
+            })
+        );
+        assert_eq!(vi_cadence(3), None);
+        assert_eq!(vi_deadline(100, 2, 16_683_350), Some(33_366_800));
+        assert_eq!(vi_deadline(u64::MAX, 2, 16_683_350), None);
+        let ntsc = dac_timing(VI_NTSC).unwrap();
+        assert_eq!(ntsc.sample_rate, 32_028);
+        assert_eq!(ntsc.block_samples, 560);
+        assert!(ntsc.field_samples >= 534 && ntsc.field_samples <= 535);
+        assert_eq!(ntsc.callback_blocks, 1);
+        assert!(dac_timing(VI_PAL).unwrap().callback_blocks >= 1);
+        assert_eq!(dac_timing(3), None);
     }
 }

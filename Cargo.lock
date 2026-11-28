@@ -1332,7 +1332,7 @@ dependencies = [
 
 [[package]]
 name = "gamepkg"
-version = "0.1.32"
+version = "0.1.33"
 dependencies = [
  "anyhow",
  "cap-fs-ext",
@@ -1344,6 +1344,7 @@ dependencies = [
  "egui-winit",
  "fearless_simd",
  "gamepkg-deflate-compat",
+ "gamepkg-font-compat",
  "gamepkg-gzip-compat",
  "gamepkg-image-compat",
  "gamepkg-native-input",
@@ -1381,21 +1382,25 @@ dependencies = [
 
 [[package]]
 name = "gamepkg-deflate-compat"
-version = "0.1.32"
+version = "0.1.33"
 dependencies = [
  "flate2",
 ]
 
 [[package]]
+name = "gamepkg-font-compat"
+version = "0.1.33"
+
+[[package]]
 name = "gamepkg-gzip-compat"
-version = "0.1.32"
+version = "0.1.33"
 dependencies = [
  "flate2",
 ]
 
 [[package]]
 name = "gamepkg-image-compat"
-version = "0.1.32"
+version = "0.1.33"
 dependencies = [
  "image",
 ]
@@ -1413,7 +1418,7 @@ dependencies = [
 
 [[package]]
 name = "gamepkg-zip-compat"
-version = "0.1.32"
+version = "0.1.33"
 dependencies = [
  "flate2",
  "zip",
@@ -1421,7 +1426,7 @@ dependencies = [
 
 [[package]]
 name = "gamepkg-zstd-compat"
-version = "0.1.32"
+version = "0.1.33"
 dependencies = [
  "zstd",
 ]

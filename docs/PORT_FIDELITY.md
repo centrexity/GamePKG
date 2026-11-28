@@ -1210,8 +1210,8 @@ The empty interval also samples earlier laser locations to verify clearing.
 Existing gameplay/editor/file workflows, strict lint, formatting and reference
 regeneration also pass. Thirteen procedural themes, image/editor
 artwork, viewport, fonts/HUD/menus/audio and remaining platforms remain open.
-Recipe 0.1.33 changes source only; host version and binary/package releases are
-unchanged.
+Recipe 0.1.33 changes source and host services; the separately tagged 0.1.33
+release publishes the host binary and package.
 
 ### Star Voyage and the SDL default line baseline
 

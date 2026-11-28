@@ -403,7 +403,7 @@ impl App {
             Launch::Local(manifest, entry) => {
                 let entry = entry.take().context("local entry already started")?;
                 let mut host = super::owner::session(manifest, backend, grants)?;
-                host.launch_options = Some(options.launch.service_bytes()?);
+                host.launch_options = Some(options.launch.service_bytes(None)?);
                 connect_window(&mut host)?;
                 let (connection, pending) =
                     broker::channel_with_services(host.worker_services(), wake);

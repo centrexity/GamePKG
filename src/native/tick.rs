@@ -274,6 +274,7 @@ pub(super) fn play_entry(
     supplied: &[PathBuf],
     settings: &crate::settings::Settings,
     graphics: crate::launch_options::LaunchArgs,
+    saved: Option<crate::launch_options::LaunchOptions>,
     smoke: bool,
 ) -> Result<()> {
     settings.validate()?;
@@ -292,6 +293,7 @@ pub(super) fn play_entry(
     let roms = selected_roms(root, manifest, supplied)?;
     let options = NativeLaunch {
         graphics,
+        saved,
         visible: !smoke,
         mute_audio: settings.mute_audio || smoke,
         volume: settings.audio_volume,
@@ -395,46 +397,6 @@ mod linux_tests {
     };
 
     type ReceiptMutation = (&'static str, Box<dyn Fn(&mut ExecutableReceipt)>);
-    static DESKTOP_ENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    struct DesktopEnv {
-        previous_display: Option<std::ffi::OsString>,
-        previous_runtime: Option<std::ffi::OsString>,
-        _runtime: tempfile::TempDir,
-        _socket: std::os::unix::net::UnixListener,
-    }
-
-    impl DesktopEnv {
-        fn install() -> Self {
-            let runtime = tempfile::tempdir().unwrap();
-            let display = format!("gamepkg-test-{}", std::process::id());
-            let socket = std::os::unix::net::UnixListener::bind(runtime.path().join(&display))
-                .expect("create launch test Wayland socket");
-            let previous_display = std::env::var_os("WAYLAND_DISPLAY");
-            let previous_runtime = std::env::var_os("XDG_RUNTIME_DIR");
-            std::env::set_var("WAYLAND_DISPLAY", &display);
-            std::env::set_var("XDG_RUNTIME_DIR", runtime.path().as_os_str());
-            Self {
-                previous_display,
-                previous_runtime,
-                _runtime: runtime,
-                _socket: socket,
-            }
-        }
-    }
-
-    impl Drop for DesktopEnv {
-        fn drop(&mut self) {
-            match &self.previous_display {
-                Some(value) => std::env::set_var("WAYLAND_DISPLAY", value),
-                None => std::env::remove_var("WAYLAND_DISPLAY"),
-            }
-            match &self.previous_runtime {
-                Some(value) => std::env::set_var("XDG_RUNTIME_DIR", value),
-                None => std::env::remove_var("XDG_RUNTIME_DIR"),
-            }
-        }
-    }
 
     fn install_minimal(root: &Path, id: &str, source: &str) {
         install_recipe(root, id, source, "native_services = true\n");
@@ -571,22 +533,25 @@ mod linux_tests {
     }
 
     #[test]
-    fn correctly_attested_package_launches_without_source_scan() {
-        let _env_lock = DESKTOP_ENV.lock().unwrap();
-        let _desktop = DesktopEnv::install();
+    fn correctly_attested_package_prepares_without_source_scan() {
         let temp = tempfile::tempdir().unwrap();
         let root = &temp.path().join("library");
         let id = "com.gamepkg.attested-launch";
         let executable = fs::read("/bin/true").unwrap();
-        stage_fake_build_with(root, id, "pub fn game_main() {}", executable, true);
+        let (_manifest, identity, _path, _binary) =
+            stage_fake_build_with(root, id, "pub fn game_main() {}", executable, true);
         let settings = crate::settings::Settings {
             memory_ceiling_mib: 512,
             mute_audio: true,
             ..Default::default()
         };
         crate::source::scan_probe::reset();
-        play_entry(root, id, &[], &settings, Default::default(), false).unwrap();
+        let (_sources, _package, _snapshot, receipt, _bytes) =
+            prepared(root, id, Some(&settings)).unwrap();
         assert_eq!(crate::source::scan_probe::count(), 0);
+        assert_eq!(receipt.source.archive_digest, identity.archive_digest);
+        assert_eq!(receipt.source.tree_identity, identity.tree_identity);
+        assert_eq!(receipt.source.source_kit, identity.tree_identity);
     }
 
     #[test]
@@ -601,7 +566,7 @@ mod linux_tests {
             ..Default::default()
         };
         crate::source::scan_probe::reset();
-        assert!(play_entry(root, id, &[], &settings, Default::default(), true).is_err());
+        assert!(play_entry(root, id, &[], &settings, Default::default(), None, true).is_err());
         assert_eq!(crate::source::scan_probe::count(), 0);
     }
 
@@ -825,7 +790,17 @@ min_bytes = 1
             mute_audio: true,
             ..Default::default()
         };
-        let play = || play_entry(root, &manifest.id, &[], &settings, Default::default(), true);
+        let play = || {
+            play_entry(
+                root,
+                &manifest.id,
+                &[],
+                &settings,
+                Default::default(),
+                None,
+                true,
+            )
+        };
         crate::source::scan_probe::reset();
         assert!(play()
             .unwrap_err()

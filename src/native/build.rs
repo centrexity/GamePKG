@@ -84,7 +84,7 @@ pub(super) fn compile_with_settings(
     let mut source = String::from_utf8(package.read("source/src/lib.rs")?)?;
     source.push_str(&bindings);
     fs::write(stage.path().join("src/lib.rs"), source)?;
-    fs::write(stage.path().join("src/main.rs"),"include!(\"lib.rs\");fn main(){gamepkg::__gamepkg_initialize_engine();gamepkg::__gamepkg_packet(&[255]);while let Some((input,state))=gamepkg::__gamepkg_next_tick(){gamepkg::__gamepkg_begin_tick();let result:u64=game_tick(input,state);let mut b=vec![0];b.extend(result.to_le_bytes());gamepkg::__gamepkg_packet(&b);}}")?;
+    fs::write(stage.path().join("src/main.rs"),"include!(\"lib.rs\");fn main(){gamepkg::__gamepkg_packet(&[255]);while let Some((input,state))=gamepkg::__gamepkg_next_tick(){gamepkg::__gamepkg_begin_tick();let result:u64=game_tick(input,state);let mut b=vec![0];b.extend(result.to_le_bytes());gamepkg::__gamepkg_packet(&b);}}")?;
     #[cfg(target_os = "linux")]
     let binary = compile_linux(
         root,

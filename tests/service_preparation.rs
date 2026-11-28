@@ -1259,6 +1259,124 @@ fn service_scratch_memory_is_private_bounded_and_atomic_without_larger_records()
 
 #[cfg(target_os = "linux")]
 #[test]
+#[ignore = "four-target generated SIMD helper source/object checks and confined Linux execution"]
+fn generated_simd_helpers_compile_into_every_native_target_without_a_service_call() {
+    use gamepkg::port_host::{
+        owner::{Grants, Owner},
+        Backend, Error, Frame, WindowCommand,
+    };
+    use std::time::{Duration, Instant};
+    struct Silent;
+    impl Backend for Silent {
+        fn window(&mut self, _: WindowCommand) -> Result<(), Error> {
+            Err(Error::Unsupported)
+        }
+        fn present(&mut self, _: Frame) -> Result<(), Error> {
+            Err(Error::Unsupported)
+        }
+        fn audio(&mut self, _: &[i16], _: u32) -> Result<(), Error> {
+            Err(Error::Unsupported)
+        }
+        fn rumble(&mut self, _: u64, _: u16, _: u16, _: u32) -> Result<(), Error> {
+            Err(Error::Unsupported)
+        }
+    }
+    let root = tempfile::tempdir().unwrap();
+    let mut files = helper::fixture("examples/minimal");
+    let mut manifest = gamepkg::manifest::Manifest::parse(&files["manifest.toml"]).unwrap();
+    manifest.limits.hard_memory_bytes = 384 * 1024 * 1024;
+    files.insert(
+        "manifest.toml".into(),
+        toml::to_string(&manifest).unwrap().into_bytes(),
+    );
+    files.insert(
+        "source/src/lib.rs".into(),
+        include_bytes!("fixtures/service_simd.rs").to_vec(),
+    );
+    let package = helper::sign(&files, root.path());
+    let sources =
+        CheckedSources::verify(&mut gamepkg::archive::Package::open(&package).unwrap()).unwrap();
+    for target in [
+        Target::Linux64,
+        Target::Linux32,
+        Target::Windows64,
+        Target::Windows32,
+    ] {
+        if target == Target::Linux32 {
+            let source = root.path().join("linux32-link-probe.c");
+            let binary = root.path().join("linux32-link-probe");
+            std::fs::write(&source, "int main(void){return 0;}\n").unwrap();
+            let linked = std::process::Command::new("cc")
+                .arg("-m32")
+                .arg(&source)
+                .arg("-o")
+                .arg(&binary)
+                .output();
+            if !linked
+                .map(|output| output.status.success())
+                .unwrap_or(false)
+            {
+                eprintln!("skipping Linux32: 32-bit linker unavailable");
+                continue;
+            }
+        }
+        let plan = Plan::new(
+            target,
+            "game_main",
+            vec![],
+            LocalLayout::NativeServices,
+            true,
+        )
+        .unwrap()
+        .with_codegen_units(2)
+        .unwrap();
+        let artifact = preparation::build(root.path(), &sources, &plan, vec![], vec![]).unwrap();
+        artifact.executable().unwrap();
+        assert_eq!(artifact.receipt().plan, plan);
+        assert_eq!(
+            artifact.receipt().game.sdk,
+            gamepkg::port_host::build_identity()
+        );
+        assert_eq!(artifact.receipt().game.source_kit, sources.identity());
+        if matches!(target, Target::Windows64 | Target::Windows32) {
+            continue;
+        }
+        let mut owner = Owner::start(
+            &artifact,
+            Silent,
+            Grants::default(),
+            256 * 1024 * 1024,
+            || {},
+        )
+        .unwrap();
+        let end = Instant::now() + Duration::from_secs(30);
+        let mut events = vec![];
+        loop {
+            owner.dispatch(16);
+            let (batch, lost) = owner.host.take_diagnostics();
+            assert_eq!(lost, 0);
+            events.extend(batch);
+            if let Some(code) = owner.poll().unwrap() {
+                assert_eq!(code, 0, "{}", owner.diagnostics());
+                break;
+            }
+            assert!(Instant::now() < end, "{}", owner.diagnostics());
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        let (batch, lost) = owner.host.take_diagnostics();
+        assert_eq!(lost, 0);
+        events.extend(batch);
+        assert_eq!(events.len(), 2, "{events:?}");
+        assert_eq!(events[0].code, 0x53494d44);
+        assert_eq!(events[0].values, [396, 300, 396]);
+        assert_eq!(events[1].code, 0x53494dff);
+        assert_eq!(events[1].values, [0]);
+        owner.stop().unwrap();
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 #[ignore = "four-target source/object admission and actual confined Linux semaphore workers"]
 fn local_semaphores_execute_without_owner_dispatch_and_keep_every_object_audited() {
     use gamepkg::port_host::{

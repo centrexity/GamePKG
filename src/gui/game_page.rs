@@ -339,6 +339,7 @@ impl App {
                     }
                 });
                 if m.requires_rom&&!self.rom_paths.get(&id).is_some_and(|p|crate::rom_selections::ready_for(&m,p)){ui.label("Choose the required ROM files below to enable Play.");}
+                self.game_launch_editor(ui, &m);
             }else if self.pending.is_none(){
                 if let Some(entry)=self.catalog.iter().find(|e|e.id==id).cloned(){
                     ui.label(&entry.title);ui.label("Not downloaded. Catalog information is unverified until the signed package is checked.");
@@ -530,6 +531,122 @@ impl App {
             ui.add_space(12.0);
         }
     }
+    fn game_launch_editor(&mut self, ui: &mut egui::Ui, manifest: &crate::manifest::Manifest) {
+        use crate::launch_options::{Antialiasing, AspectRatio, TextureLod, WindowMode};
+        let id = manifest.id.clone();
+        let current = self.launch_drafts.get(&id).copied().or_else(|| {
+            crate::registry::default_root().ok().and_then(|root| {
+                crate::launch_options::effective(&root, manifest)
+                    .ok()
+                    .flatten()
+            })
+        });
+        let mut draft = current.unwrap_or_default();
+        let before = draft;
+        ui.collapsing("Graphics preferences (native)", |ui| {
+            ui.horizontal(|ui| {
+                ui.label("Window mode");
+                egui::ComboBox::from_id_salt(format!("window-mode-{id}"))
+                    .selected_text(draft.window_mode.label())
+                    .show_ui(ui, |ui| {
+                        for &value in WindowMode::ALL {
+                            ui.selectable_value(&mut draft.window_mode, value, value.label());
+                        }
+                    });
+            });
+            ui.horizontal(|ui| {
+                ui.label("Aspect ratio");
+                egui::ComboBox::from_id_salt(format!("aspect-ratio-{id}"))
+                    .selected_text(draft.aspect_ratio.label())
+                    .show_ui(ui, |ui| {
+                        for &value in AspectRatio::ALL {
+                            ui.selectable_value(&mut draft.aspect_ratio, value, value.label());
+                        }
+                    });
+            });
+            ui.horizontal(|ui| {
+                ui.add(egui::Slider::new(&mut draft.render_scale, 1..=4).text("Render scale"));
+            });
+            ui.horizontal(|ui| {
+                ui.label("Antialiasing");
+                egui::ComboBox::from_id_salt(format!("antialiasing-{id}"))
+                    .selected_text(draft.antialiasing.label())
+                    .show_ui(ui, |ui| {
+                        for &value in Antialiasing::ALL {
+                            ui.selectable_value(&mut draft.antialiasing, value, value.label());
+                        }
+                    });
+            });
+            ui.horizontal(|ui| {
+                ui.label("Texture LOD");
+                egui::ComboBox::from_id_salt(format!("texture-lod-{id}"))
+                    .selected_text(draft.texture_lod.label())
+                    .show_ui(ui, |ui| {
+                        for &value in TextureLod::ALL {
+                            ui.selectable_value(&mut draft.texture_lod, value, value.label());
+                        }
+                    });
+            });
+            ui.horizontal(|ui| {
+                ui.add(
+                    egui::Slider::new(&mut draft.sharpening_percent, 0..=100)
+                        .text("Sharpening (%)"),
+                );
+            });
+            ui.checkbox(&mut draft.widescreen_hud, "Widescreen HUD");
+            ui.horizontal(|ui| {
+                ui.add(
+                    egui::Slider::new(&mut draft.menu_hud_scale, 1..=4).text("Menu/HUD scale"),
+                );
+            });
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(self.result.is_none(), egui::Button::new("Save graphics"))
+                    .clicked()
+                {
+                    match draft.validate() {
+                        Ok(()) => {
+                            self.launch_drafts.insert(id.clone(), draft);
+                            let id = id.clone();
+                            let save = draft;
+                            self.begin_work(move || {
+                                let root = crate::registry::default_root()?;
+                                let manifest =
+                                    crate::registry::installed_signed_identity(&root, &id)?;
+                                let _change = crate::registry::LibraryChange::acquire(&root)?;
+                                crate::launch_options::remember(&root, &manifest, Some(save))?;
+                                Ok(Work::Message(
+                                    "Graphics preferences saved for the next launch.".into(),
+                                ))
+                            });
+                        }
+                        Err(error) => self.status = format!("{error:#}"),
+                    }
+                }
+                if ui
+                    .add_enabled(self.result.is_none(), egui::Button::new("Reset graphics"))
+                    .clicked()
+                {
+                    self.launch_drafts.remove(&id);
+                    let id = id.clone();
+                    self.begin_work(move || {
+                        let root = crate::registry::default_root()?;
+                        let manifest = crate::registry::installed_signed_identity(&root, &id)?;
+                        let _change = crate::registry::LibraryChange::acquire(&root)?;
+                        crate::launch_options::remember(&root, &manifest, None)?;
+                        Ok(Work::Message(
+                            "Graphics preferences reset to the signed game defaults.".into(),
+                        ))
+                    });
+                }
+            });
+            ui.weak("Saved choices override the signed defaults for this signed game identity only. Command-line flags override saved choices.");
+        });
+        if before != draft {
+            self.launch_drafts.insert(id, draft);
+        }
+    }
+
     fn game_details(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         if let Some(m) = self.manifest.clone() {
             ui.separator();

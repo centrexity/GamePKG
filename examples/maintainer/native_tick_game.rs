@@ -70,6 +70,7 @@ fn main() -> anyhow::Result<()> {
             visible: !args.smoke,
             mute_audio: args.smoke,
             graphics: Default::default(),
+            saved: None,
             volume: 50,
         },
     )?;

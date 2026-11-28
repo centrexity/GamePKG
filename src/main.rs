@@ -18,6 +18,15 @@ enum Command {
     /// Maintainer check for matching CLI/GUI native cache recipes.
     #[command(hide = true)]
     CheckBuildIdentity,
+    /// Remember native graphics launch preferences for a signed game.
+    ConfigureGraphics {
+        id: String,
+        #[command(flatten)]
+        launch: gamepkg::launch_options::LaunchArgs,
+        /// Forget this game's saved choices and use the signed defaults again.
+        #[arg(long)]
+        reset: bool,
+    },
     /// Remember the next multiplayer server or hosting address for a supported signed game.
     ConfigureNetwork {
         id: String,
@@ -328,6 +337,26 @@ fn main() -> Result<()> {
             };
             let frames = gamepkg::previews::decode(name, &pkg.read(name)?)?;
             println!("Decoded {} preview frames (320×240, 5 fps)", frames.len());
+        }
+        Command::ConfigureGraphics { id, launch, reset } => {
+            anyhow::ensure!(
+                !reset || launch.is_empty(),
+                "--reset cannot be combined with graphics launch flags"
+            );
+            let root = gamepkg::registry::default_root()?;
+            let manifest = gamepkg::registry::installed_signed_identity(&root, &id)?;
+            let saved = if reset {
+                None
+            } else {
+                let base = gamepkg::launch_options::effective(&root, &manifest)?;
+                Some(gamepkg::launch_options::complete(launch, base)?)
+            };
+            gamepkg::launch_options::remember_for_game(&root, &id, saved)?;
+            if reset {
+                println!("Native graphics preferences reset to the signed game defaults.");
+            } else {
+                println!("Native graphics preferences saved for the next launch.");
+            }
         }
         Command::ConfigureNetwork {
             id,

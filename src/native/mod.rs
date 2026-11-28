@@ -169,7 +169,9 @@ pub fn play_services(
 ) -> Result<()> {
     // Authentication of the manifest is enough for this policy gate; the
     // child's strict verification happens once inside play_entry.
-    require_compatibility(&crate::registry::installed_signed_identity(root, id)?)?;
+    let manifest = crate::registry::installed_signed_identity(root, id)?;
+    require_compatibility(&manifest)?;
+    let saved = crate::launch_options::load(root, &manifest)?;
     #[cfg(all(
         feature = "gui",
         any(
@@ -177,7 +179,7 @@ pub fn play_services(
             all(target_os = "linux", target_arch = "x86_64")
         )
     ))]
-    return tick::play_entry(root, id, roms, settings, graphics, false);
+    return tick::play_entry(root, id, roms, settings, graphics, saved, false);
     #[cfg(not(all(
         feature = "gui",
         any(
@@ -186,7 +188,7 @@ pub fn play_services(
         )
     )))]
     {
-        let _ = (root, id, roms, settings, graphics);
+        let _ = (root, id, roms, settings, graphics, saved);
         bail!("native service play requires the GamePKG desktop edition for a supported platform")
     }
 }
@@ -293,7 +295,7 @@ pub fn compile(root: &Path, id: &str) -> Result<()> {
     )))]
     unreachable!("require_compatibility rejects unsupported hosts")
 }
-#[cfg(test)]
+#[cfg(all(test, any(target_os = "linux", windows)))]
 pub(crate) fn validate_executable(bytes: &[u8]) -> Result<()> {
     #[cfg(windows)]
     return validate_pe(bytes, std::env::consts::ARCH);

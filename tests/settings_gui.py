@@ -28,19 +28,27 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-settings-gui-') as directory:
         click_text(window,env,'Continue',root)
         click_text(window,env,'No code accepted.',root,click=False)
         click_text(window,env,'Cancel',root)
+        def click_at(label, *, min_y=None, max_y=None):
+            # Egui scrolls smoothly. Read the control twice and only activate a
+            # position that has settled instead of clicking a stale screenshot
+            # coordinate while the form is still moving.
+            point=None
+            for _ in range(5):
+                first=click_text(window,env,label,root,click=False,min_y=min_y,max_y=max_y)
+                time.sleep(.15)
+                second=click_text(window,env,label,root,click=False,min_y=min_y,max_y=max_y)
+                point=second
+                if first==second:break
+            subprocess.run(['xdotool','mousemove','--window',window,str(point[0]),str(point[1]),'click','1'],env=env,check=True)
+            time.sleep(.3)
         def click(label):
-            if label in ['Optimize new builds','Limit game render resolution','Snapshot shortcuts']:
-                direction='5' if label=='Optimize new builds' else '4'
-                subprocess.run(['xdotool','mousemove','--window',window,'400','600','click','--repeat','40','--delay','10',direction],env=env,check=True)
-                time.sleep(.3)
             if label == 'Save settings':
                 # The help copy also contains this phrase. Select the real
                 # action beside Cancel, including after scrolling the form.
                 _,save_y=click_text(window,env,'Cancel edits',root,click=False)
-                click_text(window,env,label,root,min_y=save_y-20,max_y=save_y+25)
+                click_at(label,min_y=save_y-20,max_y=save_y+25)
             else:
-                click_text(window, env, label, root, max_y=60 if label == 'Settings' else None)
-            time.sleep(.3)
+                click_at(label,max_y=60 if label == 'Settings' else None)
         def open_and_toggle():
             click('Settings')
             # This preference can be below the fold. Allow the shared control
@@ -65,9 +73,16 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-settings-gui-') as directory:
         assert tomllib.loads(config.read_text())['render_limit_enabled'] is True, 'Render limit did not save'
         click('Limit game render resolution'); click('Save settings')
         assert tomllib.loads(config.read_text())['render_limit_enabled'] is False, 'Render limit did not turn off'
-        click('Settings');click('Snapshot shortcuts');click('Reset snapshot shortcuts');click('Cancel edits')
+        def reset_draft():
+            # The dedicated shortcut section moved out with the game engines.
+            # The always-visible form reset still restores default snapshot
+            # slots, so keep checking the same Cancel/Save persistence contract.
+            # Leave the settings page open so the caller can Cancel or Save.
+            _,cancel_y=click_text(window,env,'Cancel edits',root,click=False)
+            click_at('Reset form to defaults',min_y=cancel_y-25,max_y=cancel_y+60)
+        click('Settings');reset_draft();click('Cancel edits')
         assert tomllib.loads(config.read_text())['snapshot_load_slots'] == list(range(10,20)), 'Cancel persisted shortcut reset'
-        click('Settings');click('Reset snapshot shortcuts');click('Save settings')
+        click('Settings');reset_draft();click('Save settings')
         saved=tomllib.loads(config.read_text())
         assert saved['snapshot_load_slots'] == list(range(10))
         assert saved['snapshot_save_slots'] == list(range(10))

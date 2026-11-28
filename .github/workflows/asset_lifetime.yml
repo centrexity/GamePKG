@@ -8,7 +8,6 @@ on:
       - 'web-player/**'
       - 'tools/audio-decoder/**'
       - 'tools/audio-converter/**'
-      - 'tools/check_browser_audio_decoder.py'
       - 'tests/browser_compressed_assets.py'
       - 'tests/window_commit_browser.py'
       - 'tests/browser_storage_support.py'
@@ -30,7 +29,6 @@ on:
       - 'web-player/**'
       - 'tools/audio-decoder/**'
       - 'tools/audio-converter/**'
-      - 'tools/check_browser_audio_decoder.py'
       - 'tests/browser_compressed_assets.py'
       - 'tests/window_commit_browser.py'
       - 'tests/browser_storage_support.py'
@@ -88,7 +86,7 @@ jobs:
         run: |
           # Cargo also rebuilds the CLI for this integration-test target.
           # The historical command dropped both build inputs through sudo.
-          sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-assets-rustup CARGO_HOME="$HOME/.cargo" cargo test --locked --release --test browser_audio_decoder --no-run
+          sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-assets-rustup CARGO_HOME="$HOME/.cargo" cargo test --locked --release --test audio_decoder --no-run
           target/release/gamepkg check-bundled-audio
       - name: Verify audio startup, steady deadlines and cancellation
         run: node tests/web_recorded_output.mjs

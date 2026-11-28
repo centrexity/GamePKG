@@ -38,11 +38,7 @@ pub fn load(root: &Path, manifest: &Manifest) -> Result<Option<LaunchOptions>> {
     let key = identity(manifest)?;
     Ok(read(root)?.remove(&key))
 }
-pub(crate) fn remember(
-    root: &Path,
-    manifest: &Manifest,
-    options: Option<LaunchOptions>,
-) -> Result<()> {
+pub fn remember(root: &Path, manifest: &Manifest, options: Option<LaunchOptions>) -> Result<()> {
     let key = identity(manifest)?;
     if let Some(options) = options {
         options.validate()?;
@@ -77,10 +73,36 @@ pub fn remember_for_game(root: &Path, id: &str, options: Option<LaunchOptions>) 
     let manifest = crate::registry::installed_manifest(root, id)?;
     remember(root, &manifest, options)
 }
-#[cfg(any(target_os = "linux", windows, test))]
-#[cfg(test)]
-pub(crate) fn effective(root: &Path, manifest: &Manifest) -> Result<Option<LaunchOptions>> {
+/// Host preference first, then the signed creator default. This is the one
+/// production precedence rule for native launches, shared by the child process
+/// and the service-byte view.
+pub fn effective(root: &Path, manifest: &Manifest) -> Result<Option<LaunchOptions>> {
     Ok(load(root, manifest)?.or(manifest.launch_options))
+}
+
+/// Merge explicit flags over saved and signed defaults. Callers use the result
+/// for both the child command line and op 67 so both views agree exactly.
+pub fn resolve_for_game(root: &Path, manifest: &Manifest, args: LaunchArgs) -> Result<LaunchArgs> {
+    args.resolved(effective(root, manifest)?)
+}
+
+/// Convert explicit choices into a complete, validated preference. Missing
+/// fields come from `base`, then the portable GamePKG defaults.
+pub fn complete(args: LaunchArgs, base: Option<LaunchOptions>) -> Result<LaunchOptions> {
+    let defaults = LaunchOptions::default();
+    let resolved = args.resolved(Some(base.unwrap_or(defaults)))?;
+    Ok(LaunchOptions {
+        window_mode: resolved.window_mode.unwrap_or(defaults.window_mode),
+        aspect_ratio: resolved.aspect_ratio.unwrap_or(defaults.aspect_ratio),
+        render_scale: resolved.render_scale.unwrap_or(defaults.render_scale),
+        antialiasing: resolved.antialiasing.unwrap_or(defaults.antialiasing),
+        texture_lod: resolved.texture_lod.unwrap_or(defaults.texture_lod),
+        sharpening_percent: resolved
+            .sharpening_percent
+            .unwrap_or(defaults.sharpening_percent),
+        widescreen_hud: resolved.widescreen_hud.unwrap_or(defaults.widescreen_hud),
+        menu_hud_scale: resolved.menu_hud_scale.unwrap_or(defaults.menu_hud_scale),
+    })
 }
 
 macro_rules! choices {
@@ -268,6 +290,37 @@ mod tests {
         assert_eq!(parse(&["--widescreen-hud"]).widescreen_hud, Some(true));
     }
     #[test]
+    fn saved_settings_override_signed_defaults_and_explicit_flags_win() {
+        let root = tempfile::tempdir().unwrap();
+        let mut manifest = game();
+        let signed = LaunchOptions {
+            render_scale: 1,
+            antialiasing: Antialiasing::Fxaa,
+            ..LaunchOptions::default()
+        };
+        manifest.launch_options = Some(signed);
+        remember(root.path(), &manifest, None).unwrap();
+        let resolved = resolve_for_game(root.path(), &manifest, LaunchArgs::default()).unwrap();
+        assert_eq!(resolved.render_scale, Some(1));
+        assert_eq!(resolved.antialiasing, Some(Antialiasing::Fxaa));
+        let saved = LaunchOptions {
+            render_scale: 3,
+            ..signed
+        };
+        remember(root.path(), &manifest, Some(saved)).unwrap();
+        let resolved = resolve_for_game(root.path(), &manifest, LaunchArgs::default()).unwrap();
+        assert_eq!(resolved.render_scale, Some(3));
+        let explicit = parse(&["--render-scale", "4", "--antialiasing", "off"]);
+        let resolved = resolve_for_game(root.path(), &manifest, explicit).unwrap();
+        assert_eq!(resolved.render_scale, Some(4));
+        assert_eq!(resolved.antialiasing, Some(Antialiasing::Off));
+        assert_eq!(resolved.texture_lod, Some(saved.texture_lod));
+        let bytes = resolved.service_bytes(None).unwrap();
+        assert_eq!(bytes[2], 4);
+        assert_eq!(bytes[3], 0);
+        assert_eq!(bytes[4], 1);
+    }
+    #[test]
     fn rejects_invalid_or_conflicting_launch_arguments() {
         use clap::Parser;
         for args in [
@@ -375,9 +428,9 @@ impl From<LaunchOptions> for LaunchArgs {
     }
 }
 impl LaunchArgs {
-    #[cfg(all(feature = "gui", any(target_os = "linux", windows)))]
-    pub(crate) fn service_bytes(self) -> Result<[u8; 8]> {
-        let args = self.resolved(None)?;
+    #[cfg(any(feature = "gui", test))]
+    pub(crate) fn service_bytes(self, base: Option<LaunchOptions>) -> Result<[u8; 8]> {
+        let args = self.resolved(base)?;
         let absent = u8::MAX;
         Ok([
             args.window_mode

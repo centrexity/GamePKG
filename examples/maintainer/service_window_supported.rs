@@ -304,6 +304,7 @@ fn link_and_run(
         .into(),
         visible: options().visible,
         mute_audio: true,
+        saved: None,
         volume: 50,
     };
     let recipe = || PipelineRecipe {

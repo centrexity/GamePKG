@@ -4,6 +4,7 @@ use super::{identifier, Error, Result};
 use eframe::{egui_wgpu, wgpu};
 use std::collections::BTreeMap;
 use wgpu::util::DeviceExt;
+mod j3d;
 mod retained;
 mod state;
 #[cfg(any(windows, all(target_os = "linux", target_arch = "x86_64")))]
@@ -217,6 +218,7 @@ pub struct Graphics {
     precise_occlusion: bool,
     templates: Vec<std::sync::Arc<variants::Template>>,
     variants: BTreeMap<u64, variants::Variant>,
+    j3d_states: BTreeMap<[u8; 32], Vec<u8>>,
     preparing: std::sync::Arc<std::sync::atomic::AtomicBool>,
     wake: std::sync::Arc<dyn Fn() + Send + Sync>,
 }
@@ -462,6 +464,7 @@ impl Graphics {
             precise_occlusion,
             templates,
             variants: BTreeMap::new(),
+            j3d_states: BTreeMap::new(),
             preparing: Default::default(),
             wake: std::sync::Arc::new(|| {}),
         })
@@ -489,8 +492,43 @@ impl Graphics {
             Ok(())
         }
     }
+    /// Validate and identify a host-reviewed J3D/GX state. The returned digest
+    /// is a stable variant identity for the signed template, sample count and
+    /// canonical state words; no game code or native handle is involved.
+    fn j3d_call(&mut self, op: u32, bytes: &[u8], capacity: usize) -> Result<Vec<u8>> {
+        let mut r = Reader(bytes);
+        if op == 156 {
+            let template = r.u32()? as usize;
+            let state = j3d::State::parse(&mut r)?;
+            if capacity < 32 {
+                return Err(Error::Invalid);
+            }
+            let identity = self
+                .templates
+                .get(template)
+                .map(|value| value.identity.clone())
+                .ok_or(Error::Invalid)?;
+            let hash = state.variant(&identity, self.samples)?;
+            if self.j3d_states.len() >= 256 && !self.j3d_states.contains_key(&hash) {
+                return Err(Error::Busy);
+            }
+            self.j3d_states.insert(hash, state.canonical());
+            Ok(hash.to_vec())
+        } else {
+            if capacity < j3d::STATE_BYTES {
+                return Err(Error::Invalid);
+            }
+            let hash: [u8; 32] = r.take(32)?.try_into().map_err(|_| Error::Invalid)?;
+            r.end()?;
+            self.j3d_states.get(&hash).cloned().ok_or(Error::Denied)
+        }
+    }
+
     pub fn call(&mut self, operation: u32, request: &[u8], capacity: usize) -> Result<Vec<u8>> {
         self.reap();
+        if (156..=157).contains(&operation) {
+            return self.j3d_call(operation, request, capacity);
+        }
         if (127..=128).contains(&operation) {
             return self.variant_call(operation, request, capacity);
         }

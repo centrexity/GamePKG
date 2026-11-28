@@ -95,12 +95,28 @@ the game engine and its platform bridge inside the audited game code.
 Record the compatibility-layer version and source identity in the build
 receipt. Retain the existing permission, resource, and confinement rules.
 
-Codec and SIMD access stay inside that trusted layer. The GamePKG-owned crates
-under `compat/image`, `compat/zstd`, `compat/deflate`, `compat/gzip`, and
-`compat/zip` wrap reviewed upstream codecs with bounded in-memory APIs; they are
-host dependencies, never guest crates. `src/host_simd.rs` performs static and
+Codec, font and SIMD access stay inside that trusted layer. The GamePKG-owned
+crates under `compat/image`, `compat/font`, `compat/zstd`, `compat/deflate`,
+`compat/gzip`, and `compat/zip` wrap reviewed implementations with bounded
+in-memory APIs; they are host dependencies, never guest crates. The font crate
+supplies a deterministic dependency-free 5x7 bitmap rasterizer; games receive
+glyph pixels only through operation 75. `src/host_simd.rs` performs static and
 runtime host capability detection through the vendored `fearless_simd` core.
 Neither SIMD levels nor CPU identity become guest imports or package metadata.
+
+Native ports may call fixed-width SIMD helpers injected from the GamePKG
+compatibility layer into the checked game object. The generated Rust binding
+provides add, sub, bitwise and/or/xor and shifts for `u32x4`/`u32x8`; add, sub,
+mul, div, abs, neg and mul-add for `f32x4`/`f32x8`; and fixed-order
+`wrapping_sum`, `sum`, `product`, `dot`, `min` and `max` reductions. The C
+header exposes the matching `gamepkg_simd_*` functions. They compile directly
+into the game with compile-time architecture selection: no service call,
+opcode, runtime dispatch, CPUID result, pointer, intrinsic or `target_arch`
+token is exposed to game source. Reductions use a fixed lane order and any-NaN
+min/max policy so every reviewed backend returns the same value; mul-add is
+mul-then-add without FMA contraction. The backend implementation lives only in
+the pinned SDK sources, so changing it changes `build_identity()` and
+invalidates older receipts.
 
 Admission allows up to 512 MiB of package source. Verified compiler tools and
 their pinned downloads can be up to 2 GiB per file. The finished game
@@ -698,6 +714,9 @@ the connection before allocation.
 | 44 touch contacts | empty | repeated 32-byte contacts |
 | 45 rumble | player u32, low u32, high u32 (0..65535), duration ms u32 (0..10000) | empty |
 | 46 input devices | empty | repeated device u64, kind u32, logical player i32 (-1 unclaimed); no backend tokens |
+| 57 exact-frame rumble | player u32, low u32, high u32 (0..65535), frame u64 (nonzero, strictly increasing per player) | empty |
+| 58 VI cadence | standard u32 (0 NTSC/1 PAL/2 120 Hz NTSC) | period ns u64, echoed standard u32, fields per frame u32 |
+| 75 host font glyph | font u32 (0), codepoint u32, size u32 (1..32) | width/height/advance u32, then straight-alpha RGBA8 pixels |
 | 50 network | existing operation u32, existing request payload | existing service payload without its internal status byte |
 | 60 monotonic | empty | session-relative ns u64, wake generation u64 |
 | 61 wait until | absolute session ns u64, observed generation u64 | now ns u64, generation u64, reason u32 (0 deadline/1 wake) |
@@ -730,9 +749,31 @@ the connection before allocation.
 | 126 typed template structural check | cube-slot mask u32 (bits 0..3), exactly 13,072 bytes | empty; Invalid or Unsupported on rejection |
 | 127 prepare state variant | verified template index u32, 27 state words described below | opaque variant ID u64 |
 | 128 variant poll | variant ID u64 | exact template/state/sample SHA-256 bytes (32); Busy/Failed otherwise |
+| 156 J3D/GX state identity | verified template index u32, 192 canonical state bytes | stable state identity (32 bytes) |
+| 157 J3D/GX state recall | state identity (32 bytes) | the exact canonical 192 state bytes; Denied for unknown identity |
+| 158 THP frame plan | VI standard u32, start ns u64, field u64 | field u64, retrace deadline ns u64, DAC callbacks u32, reserved zero u32 |
+| 159 THP YUV display | width/height u32, Y/U/V420 plane bytes | straight-alpha RGBA8 pixels |
 
 Window commands: 0 fullscreen bool u32; 1 cursor visible bool u32; 2 cursor locked
 bool u32; 3 resize physical width/height u32; 4 close (no argument).
+
+Operation 67's eight bytes are fullscreen, widescreen aspect, render scale,
+antialiasing, texture LOD, sharpening percent, widescreen HUD and menu/HUD
+scale; 255 means the game keeps its own preference. Explicit launch flags take
+precedence over saved host preferences, which take precedence over signer
+defaults. Saved choices are keyed by signed game identity, creator key and
+built-in engine, are stored only in the host library, and never become command
+text or game dependencies. The CLI `configure-graphics` subcommand and the
+library's Graphics preferences editor save or reset them; the child command
+line and operation 67 receive the same resolved values.
+
+Operation 57 is the exact VI-framed form of rumble. The host accepts only a
+nonzero frame number greater than the last accepted frame for that logical
+player, then resolves the player to its claimed shared device. Operation 58
+publishes the fixed period of a reviewed VI standard; the host never derives it
+from a wall clock or the physical display. Operation 75 rasterizes a bounded
+GamePKG-owned bitmap glyph; the game has no font file, platform font API, or
+font crate dependency.
 
 Each draw is image ID u64, x/y/width/height f32 in physical pixels, filter u32
 (0 nearest/1 linear), shader index u32 (`0xffffffff` for ordinary image).
@@ -852,6 +893,28 @@ disabled blending requires six zero blend words. Non-stencil formats require
 ignored faces (Always/Keep/Keep/Keep) and zero stencil masks. All boolean fields
 are exactly 0/1, floats finite, negative-zero bias normalized to positive zero;
 unknown fields/values or trailing bytes fail before a worker is started.
+
+Operations 156/157 carry the larger J3D/GX state vocabulary used by GameCube
+style ports. Its 48 words are: flags, alpha compare/reference, fog type/start/
+end/color, light mask, NBT mode, indirect stages, texture slots, signed LOD bias,
+logic-blend-2 op, TEV stage count, two reserved zero words, then eight four-word
+TEV stage records. Flags 0..7 enable alpha test, fog, lighting, NBT, indirect,
+multitexture, logic blend 2 and cull-all. Disabled feature fields must use their
+single canonical zero encoding; TEV stages beyond the declared count must be
+zero. Values and ignored trailing bytes are rejected before any state is retained.
+The host returns a stable SHA-256 identity over the signed template identity,
+sample count and canonical state; recall returns those exact bytes. The host
+never accepts game bytecode, shaders or native handles through this path.
+
+Operations 158/159 provide the THP presentation half of a port. The frame plan
+uses the same VI period as operation 58, checks the absolute field deadline, and
+reports the number of complete 560-sample DAC callbacks in that field. A port
+overlaps read and decode with its own verified bounded tasks, then submits the
+decoded planes through operation 159. Conversion uses the exact integer form of
+the reviewed four-stage GX/TEV combine path (255 scales to 256, additions add
+128 before the shift, subtractions add 127, and luma stages clamp), with linear
+4:2:0 chroma sampled in two-pixel blocks. It writes opaque RGBA8 pixels; the
+host never reads a video file or exposes a media framework to the game.
 
 Input event fields: device u64, monotonic timestamp ns u64, kind u32, code u32,
 x/y f32, contact u64. Kinds, button masks, axis ranges and physical HID conventions

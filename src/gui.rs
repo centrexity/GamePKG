@@ -58,6 +58,7 @@ pub struct App {
     rom_paths: HashMap<String, Vec<String>>,
     data_paths: HashMap<String, String>,
     network_drafts: HashMap<String, multiplayer::Draft>,
+    launch_drafts: HashMap<String, crate::launch_options::LaunchOptions>,
     rom_path: String,
     rom_game: Option<String>,
     rom_identity: Option<String>,

@@ -75,6 +75,17 @@ fn compatibility_layer_dispatches_inside_the_game_process() {
 
     let worker = std::thread::spawn(move || {
         let mut bytes = [0; 4];
+        assert_eq!(
+            local_client::simd_u32x4_add([1, 2, 3, 4], [10, 20, 30, 40]),
+            [11, 22, 33, 44]
+        );
+        assert_eq!(
+            local_client::simd_f32x4_sum(local_client::simd_f32x4_mul(
+                [1.0, 2.0, 3.0, 4.0],
+                [10.0, 20.0, 30.0, 40.0]
+            )),
+            300.0
+        );
         assert_eq!(local_client::file_read(rom_id, 0, &mut bytes), Ok(4));
         assert_eq!(&bytes, b"disc");
         assert_eq!(local_client::file_write(rom_id, 0, b"x"), Err(-4));

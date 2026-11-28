@@ -1,6 +1,6 @@
 [package]
 name = "gamepkg"
-version = "0.1.32"
+version = "0.1.33"
 edition = "2021"
 rust-version = "1.89"
 license = "Apache-2.0"
@@ -38,6 +38,7 @@ wasmparser = "=0.236.1"
 naga = { version = "=24.0.0", features = ["spv-in", "wgsl-in", "glsl-out", "wgsl-out"] }
 wasmtime = { version = "36.0.20", default-features = false, features = ["cranelift", "runtime", "std", "component-model"] }
 image = { package = "gamepkg-image-compat", path = "compat/image" }
+font = { package = "gamepkg-font-compat", path = "compat/font" }
 eframe = { version = "0.31", optional = true, default-features = false, features = ["default_fonts", "glow", "wgpu", "x11", "wayland"] }
 wgpu-types = { version = "=24.0.0", optional = true, features = ["serde"] }
 anyhow = "1"

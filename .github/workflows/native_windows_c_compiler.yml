@@ -55,10 +55,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $log = Get-Content -Raw "$env:RUNNER_TEMP/private-compiler-root.log"
           if ($log -notmatch 'test result: ok\. 1 passed; 0 failed;') { throw 'The exact private-root lifecycle test did not pass' }
-          cargo test --locked --target ${{ matrix.target }} --lib build_policy::tests::low_level_engine_builders_and_runtime_initialization_cannot_skip_admission -- --exact --nocapture 2>&1 | Tee-Object -Append -FilePath "$env:RUNNER_TEMP/private-compiler-root.log"
+          cargo test --locked --target ${{ matrix.target }} --lib build_policy::tests::low_level_engine_initialization_cannot_skip_admission -- --exact --nocapture 2>&1 | Tee-Object -Append -FilePath "$env:RUNNER_TEMP/private-compiler-root.log"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $log = Get-Content -Raw "$env:RUNNER_TEMP/private-compiler-root.log"
-          if ($log -notmatch 'low_level_engine_builders_and_runtime_initialization_cannot_skip_admission \.\.\. ok') { throw 'Missing explicit native-profile admission controls' }
+          if ($log -notmatch 'low_level_engine_initialization_cannot_skip_admission \.\.\. ok') { throw 'Missing explicit native-profile admission controls' }
       - name: Verify confined target-sized C compilation and linking
         shell: pwsh
         run: |

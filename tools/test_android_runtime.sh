@@ -14,11 +14,11 @@ artifact_paths=$(mktemp)
 trap 'rm -f "$artifact_paths"' EXIT
 python3 "$script_directory/android_test_artifacts.py" "$artifacts" "$script_directory/../Cargo.toml" > "$artifact_paths"
 mapfile -d '' -t binaries < "$artifact_paths"
-[ "${#binaries[@]}" -eq 9 ] || { echo 'Cargo must report eight suites and one library test executable.' >&2; exit 1; }
-publication_binary=${binaries[8]}
+[ "${#binaries[@]}" -eq 8 ] || { echo 'Cargo must report seven suites and one library test executable.' >&2; exit 1; }
+publication_binary=${binaries[7]}
 remote=/data/local/tmp/gamepkg-portability32
 "$adb" -s "$serial" shell mkdir -p "$remote"
-for binary in "${binaries[@]:0:8}"; do
+for binary in "${binaries[@]:0:7}"; do
   name=$(basename "$binary")
   "$adb" -s "$serial" push "$binary" "$remote/$name"
   "$adb" -s "$serial" shell "chmod 700 $remote/$name"
