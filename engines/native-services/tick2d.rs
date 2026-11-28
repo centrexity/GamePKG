@@ -618,12 +618,6 @@ pub fn window_keep_size() -> bool {
 pub fn window_preview_active() -> bool {
     window_control(8, 0)
 }
-pub fn window_vsync_preference() -> Option<bool> {
-    window_control(9, 0).then(|| window_control(9, 1))
-}
-pub fn window_set_vsync(enabled: bool) -> bool {
-    window_control(10, u32::from(enabled))
-}
 pub fn achievement_unlock(index: u32) -> bool {
     tick_words(73, &[index], &[]) == Some(1)
 }

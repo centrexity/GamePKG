@@ -171,7 +171,10 @@ current source to use it.
 Operation 9 reads the committed desktop VSync preference: value 0 tests
 availability and value 1 reads enabled. Operation 10 requests disabled/enabled
 with value 0/1 and a fresh user action. These operations back the typed VSync
-helpers above and are unavailable to browser/headless hosts.
+helpers above and are unavailable to browser/headless hosts. Generated native
+Rust and C bindings expose the same `window_vsync_preference()` and
+`window_set_vsync(enabled)` helpers through the GamePKG compatibility layer,
+using the checked tick service rather than a window or graphics handle.
 Fullscreen, close and homepage requests require a fresh key, pointer, controller or touch action;
 held buttons and repeated keys do not qualify. The return value means the host
 accepted the request, not that the operating system fulfilled it. Requests commit

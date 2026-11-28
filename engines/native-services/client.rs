@@ -1628,6 +1628,35 @@ pub fn window_state() -> std::result::Result<WindowState, i32> {
         closed: flags & 4 != 0,
     })
 }
+fn tick_window_control(operation: u32, value: u32) -> std::result::Result<bool, i32> {
+    let mut reply = [0; 4];
+    if call(
+        71,
+        &[operation.to_le_bytes(), value.to_le_bytes()].concat(),
+        &mut reply,
+    )? != reply.len()
+    {
+        return Err(-3);
+    }
+    match u32::from_le_bytes(reply) {
+        0 => Ok(false),
+        1 => Ok(true),
+        _ => Err(-3),
+    }
+}
+/// Committed desktop VSync preference. Unavailable hosts and malformed replies
+/// return `None`; a staged change is never predicted before its tick commits.
+pub fn window_vsync_preference() -> Option<bool> {
+    if !tick_window_control(9, 0).unwrap_or(false) {
+        return None;
+    }
+    tick_window_control(9, 1).ok()
+}
+/// Request the next-launch presentation preference. A fresh action is required;
+/// a successful tick commits the request, and a failed tick discards it.
+pub fn window_set_vsync(enabled: bool) -> bool {
+    tick_window_control(10, u32::from(enabled)).unwrap_or(false)
+}
 fn window(command: u32, value: u32) -> std::result::Result<(), i32> {
     call(
         10,
@@ -3733,6 +3762,55 @@ mod local_clock_decode_tests {
             assert_eq!(local_clock_state_decode(&value), Err(-3));
         }
     }
+    #[test]
+    fn vsync_helpers_use_exact_tick_window_control_wire_layout() {
+        let _exclusive = TEST_BINDING_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let calls = [
+            (9u32, 0u32, vec![1u8, 0, 0, 0]),
+            (9, 1, vec![1, 0, 0, 0]),
+            (9, 0, vec![1, 0, 0, 0]),
+            (9, 1, vec![0, 0, 0, 0]),
+            (9, 0, vec![1, 0, 0, 0]),
+            (9, 1, vec![2, 0, 0, 0]),
+            (9, 0, vec![0, 0, 0, 0]),
+            (9, 0, vec![2, 0, 0, 0]),
+            (10, 0, vec![1, 0, 0, 0]),
+            (10, 1, vec![0, 0, 0, 0]),
+            (10, 1, vec![5, 0, 0, 0]),
+        ];
+        let count = calls.len();
+        let index = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let seen = index.clone();
+        connect_local(move |operation, request, capacity| {
+            let at = seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let (expected_operation, expected_value, reply) = &calls[at];
+            assert_eq!(operation, 71);
+            assert_eq!(
+                request,
+                [
+                    expected_operation.to_le_bytes(),
+                    expected_value.to_le_bytes()
+                ]
+                .concat()
+            );
+            assert_eq!(capacity, 4);
+            Ok(reply.clone())
+        })
+        .unwrap();
+        assert_eq!(window_vsync_preference(), Some(true));
+        assert_eq!(window_vsync_preference(), Some(false));
+        assert_eq!(window_vsync_preference(), None);
+        assert_eq!(window_vsync_preference(), None);
+        assert_eq!(window_vsync_preference(), None);
+        assert!(window_set_vsync(false));
+        assert!(!window_set_vsync(true));
+        assert!(!window_set_vsync(true));
+        disconnect();
+        assert_eq!(index.load(std::sync::atomic::Ordering::SeqCst), count);
+    }
+
     #[test]
     fn host_font_and_vi_helpers_use_exact_wire_layouts() {
         let _exclusive = TEST_BINDING_LOCK

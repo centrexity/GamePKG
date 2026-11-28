@@ -49,6 +49,7 @@
 #define GAMEPKG_PORT_FILE_RESIZE 9u
 #define GAMEPKG_PORT_WINDOW_COMMAND 10u
 #define GAMEPKG_PORT_WINDOW_STATE 11u
+#define GAMEPKG_PORT_TICK_WINDOW_CONTROL 71u /* operation/value u32; bool u32 reply */
 #define GAMEPKG_PORT_FILE_SYNC 12u
 #define GAMEPKG_PORT_GRANTS 13u
 #define GAMEPKG_PORT_FILE_REPLACE 14u
@@ -645,5 +646,36 @@ static inline int32_t gamepkg_port_file_read(uint64_t file, uint64_t offset, uin
 static inline int32_t gamepkg_port_window(uint32_t command,uint32_t value) {
     uint8_t request[8];gamepkg_port_put_u32(request,command);gamepkg_port_put_u32(request+4,value);
     return gamepkg_port_call(GAMEPKG_PORT_WINDOW_COMMAND,request,command==4u?4u:8u,0,0);
+}
+/* Committed desktop VSync preference from window_control operations 9/10.
+ * Reads need no gesture; a false availability result is DENIED. Writes require
+ * a fresh action and commit only with a successful game tick. */
+static inline int32_t gamepkg_window_vsync_preference(uint32_t *enabled) {
+    uint8_t request[8],reply[4];
+    int32_t result;
+    if (enabled==NULL) return GAMEPKG_PORT_INVALID;
+    gamepkg_port_put_u32(request,9u);
+    gamepkg_port_put_u32(request+4,0u);
+    result=gamepkg_port_call(GAMEPKG_PORT_TICK_WINDOW_CONTROL,request,8,reply,4);
+    if (result<0) return result;
+    if (result!=4) return GAMEPKG_PORT_FAILED;
+    if (gamepkg_port_get_u32(reply)==0u) return GAMEPKG_PORT_DENIED;
+    gamepkg_port_put_u32(request+4,1u);
+    result=gamepkg_port_call(GAMEPKG_PORT_TICK_WINDOW_CONTROL,request,8,reply,4);
+    if (result<0) return result;
+    if (result!=4 || gamepkg_port_get_u32(reply)>1u) return GAMEPKG_PORT_FAILED;
+    *enabled=gamepkg_port_get_u32(reply);
+    return 4;
+}
+static inline int32_t gamepkg_window_set_vsync(uint32_t enabled) {
+    uint8_t request[8],reply[4];
+    int32_t result;
+    if (enabled>1u) return GAMEPKG_PORT_INVALID;
+    gamepkg_port_put_u32(request,10u);
+    gamepkg_port_put_u32(request+4,enabled);
+    result=gamepkg_port_call(GAMEPKG_PORT_TICK_WINDOW_CONTROL,request,8,reply,4);
+    if (result<0) return result;
+    if (result!=4 || gamepkg_port_get_u32(reply)>1u) return GAMEPKG_PORT_FAILED;
+    return gamepkg_port_get_u32(reply)!=0u ? 0 : GAMEPKG_PORT_DENIED;
 }
 #endif

@@ -50,6 +50,15 @@ int port_client_probe(uint64_t rom) {
     CHECK(gamepkg_port_call(GAMEPKG_PORT_NETWORK,request,4,reply,4)==GAMEPKG_PORT_DENIED);
     CHECK(gamepkg_port_call(GAMEPKG_PORT_WINDOW_STATE,0,0,reply,12)==12);
     CHECK(gamepkg_port_get_u32(reply)==1000 && gamepkg_port_get_u32(reply+4)==500);
+    /* This fixture has no tick service, so VSync preference requests are denied. */
+    {
+        uint32_t enabled=1u;
+        CHECK(gamepkg_window_vsync_preference(&enabled)==GAMEPKG_PORT_DENIED);
+        CHECK(enabled==1u);
+        CHECK(gamepkg_window_set_vsync(0)==GAMEPKG_PORT_DENIED);
+        CHECK(gamepkg_window_set_vsync(1)==GAMEPKG_PORT_DENIED);
+        CHECK(gamepkg_window_set_vsync(2)==GAMEPKG_PORT_INVALID);
+    }
     {
         uint64_t period=0,deadline=0;
         uint32_t fields=0,callbacks=0,i;

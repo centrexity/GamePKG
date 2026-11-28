@@ -1332,7 +1332,7 @@ dependencies = [
 
 [[package]]
 name = "gamepkg"
-version = "0.1.33"
+version = "0.1.34"
 dependencies = [
  "anyhow",
  "cap-fs-ext",
@@ -1382,25 +1382,25 @@ dependencies = [
 
 [[package]]
 name = "gamepkg-deflate-compat"
-version = "0.1.33"
+version = "0.1.34"
 dependencies = [
  "flate2",
 ]
 
 [[package]]
 name = "gamepkg-font-compat"
-version = "0.1.33"
+version = "0.1.34"
 
 [[package]]
 name = "gamepkg-gzip-compat"
-version = "0.1.33"
+version = "0.1.34"
 dependencies = [
  "flate2",
 ]
 
 [[package]]
 name = "gamepkg-image-compat"
-version = "0.1.33"
+version = "0.1.34"
 dependencies = [
  "image",
 ]
@@ -1418,7 +1418,7 @@ dependencies = [
 
 [[package]]
 name = "gamepkg-zip-compat"
-version = "0.1.33"
+version = "0.1.34"
 dependencies = [
  "flate2",
  "zip",
@@ -1426,7 +1426,7 @@ dependencies = [
 
 [[package]]
 name = "gamepkg-zstd-compat"
-version = "0.1.33"
+version = "0.1.34"
 dependencies = [
  "zstd",
 ]

@@ -1576,6 +1576,69 @@ fn tick_window_controls_require_real_gesture_and_commit_on_accepted_frame() {
 }
 
 #[test]
+fn tick_vsync_preference_requires_a_fresh_action_and_commits_only_on_success() {
+    let mut host = host();
+    let manifest =
+        crate::manifest::Manifest::parse(include_bytes!("../../examples/minimal/manifest.toml"))
+            .unwrap();
+    host.tick = Some(tick_services::Services::new(&manifest).unwrap());
+    host.observe_window(WindowState {
+        width: 640,
+        height: 480,
+        focused: true,
+        ..Default::default()
+    });
+    let frame = [0u32.to_le_bytes(), 0u32.to_le_bytes()].concat();
+    let read = [9u32.to_le_bytes(), 1u32.to_le_bytes()].concat();
+    let disable = [10u32.to_le_bytes(), 0u32.to_le_bytes()].concat();
+    let enabled = 1u32.to_le_bytes().to_vec();
+
+    assert_eq!(host.call(71, &disable, 4), Err(Error::Denied));
+    host.call(40, &[], 40).unwrap();
+    assert_eq!(host.call(71, &disable, 4), Ok(vec![0; 4]));
+    host.call(70, &frame, 0).unwrap();
+
+    let keyboard = host.input_backend().connect(1, 1, 1).unwrap();
+    host.input_backend().submit(Event {
+        device: keyboard,
+        kind: 1,
+        code: 40,
+        ..Default::default()
+    });
+    host.call(40, &[], 40 * 8).unwrap();
+    assert_eq!(host.call(71, &read, 4), Ok(enabled.clone()));
+    assert_eq!(host.call(71, &disable, 4), Ok(enabled.clone()));
+    assert_eq!(host.call(71, &read, 4), Ok(enabled.clone())); // No staged prediction.
+    host.backend().busy = true;
+    assert_eq!(host.call(70, &frame, 0), Err(Error::Busy));
+    host.backend().busy = false;
+    host.call(40, &[], 40).unwrap();
+    assert_eq!(host.call(71, &read, 4), Ok(enabled.clone()));
+    host.call(70, &frame, 0).unwrap();
+
+    host.input_backend().submit(Event {
+        device: keyboard,
+        kind: 2,
+        code: 40,
+        ..Default::default()
+    });
+    host.call(40, &[], 40 * 8).unwrap();
+    host.call(70, &frame, 0).unwrap();
+    host.input_backend().submit(Event {
+        device: keyboard,
+        kind: 1,
+        code: 41,
+        ..Default::default()
+    });
+    host.call(40, &[], 40 * 8).unwrap();
+    assert_eq!(host.call(71, &disable, 4), Ok(enabled));
+    host.call(70, &frame, 0).unwrap();
+    host.call(40, &[], 40).unwrap();
+    assert_eq!(host.call(71, &read, 4), Ok(vec![0; 4]));
+    host.call(70, &frame, 0).unwrap();
+}
+
+#[test]
 fn tick_compositor_validates_clip_and_primitive_records_atomically() {
     let mut host = host();
     let pixel = [1u32.to_le_bytes(), 1u32.to_le_bytes(), [255, 0, 0, 255]].concat();

@@ -313,6 +313,16 @@ and close through the owned viewport. Rumble resolves a logical player's shared
 device identity through a host-installed provider callback; unsupported output
 returns `Unsupported`, rather than guessing an XInput slot.
 
+The generated compatibility client also exposes the committed desktop VSync
+preference through tick operation 71 (`window_control` operations 9/10). Rust
+offers `window_vsync_preference()` and `window_set_vsync(enabled)`; C offers
+`gamepkg_window_vsync_preference()` and `gamepkg_window_set_vsync()`. Reads
+need no gesture and never predict a staged write. Writes require a fresh action,
+stage one preference, and commit only when that game tick succeeds; a failed
+tick discards the request. Hosts without a readable desktop preference or an
+active tick service report unavailable/denied. No window, surface or swapchain
+handle is exposed: the host owns presentation and applies the committed choice.
+
 ## Media
 
 Images are immutable RGBA8 uploads identified by session-scoped opaque IDs.
