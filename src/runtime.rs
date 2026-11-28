@@ -837,6 +837,7 @@ impl Game {
         let verified = crate::registry::installed_verified(root, id)?;
         #[cfg_attr(not(all(test, any(target_os = "linux", windows))), allow(unused_mut))]
         let mut package = verified.package;
+        package.resolve_shared_assets(root)?;
         let _snapshot = verified.snapshot;
         let package_digest = verified.identity.archive_digest;
         let manifest = verified.manifest;
